@@ -1,0 +1,25 @@
+# Secrets — never commit
+.env
+.env.local
+
+# Database files
+*.db
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# Node / Frontend
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# macOS
+.DS_Store
+
+# ngrok binary
+ngrok

@@ -81,8 +81,8 @@ async def totp_enroll_confirm(req: TOTPConfirmRequest, db: AsyncSession = Depend
         await seed_user_data(db, user.id, req.verify_user_id)
         await db.commit()
 
-    token = create_session_token(user.verify_user_id, user.email, user.name)
-    return {"token": token, "user": {"name": user.name, "email": user.email}}
+    token = create_session_token(user.verify_user_id, user.email, user.name, user.role)
+    return {"token": token, "user": {"name": user.name, "email": user.email, "role": user.role}}
 
 
 @router.post("/verify")
@@ -102,5 +102,5 @@ async def totp_verify(req: TOTPVerifyRequest, db: AsyncSession = Depends(get_db)
     if not user:
         raise HTTPException(status_code=404, detail="User not found — register first")
 
-    token = create_session_token(user.verify_user_id, user.email, user.name)
-    return {"token": token, "user": {"name": user.name, "email": user.email}}
+    token = create_session_token(user.verify_user_id, user.email, user.name, user.role)
+    return {"token": token, "user": {"name": user.name, "email": user.email, "role": user.role}}

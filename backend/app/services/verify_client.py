@@ -17,20 +17,39 @@ logger = logging.getLogger(__name__)
 class VerifyClient:
     def __init__(self):
         self._client = httpx.AsyncClient(timeout=30.0)
+        self._token_cache: dict[str, str] = {}  # Simple in-memory cache
+        self._token_expires_at = 0.0
 
     async def _get_access_token(self) -> str:
-        """Obtain an IBM Verify access token using client_credentials grant."""
+        """
+        Obtain an IBM Verify access token using client_credentials grant.
+        Tokens are cached for 45 minutes (default IBM Verify token expiry is 60 min).
+
+        NOTE: The client_credentials grant must be enabled in IBM Verify Admin Console:
+          Applications → MockBank POC → Sign-on → Grant types → enable "Client credentials"
+        """
+        import time
+        if self._token_cache and time.time() < self._token_expires_at:
+            return self._token_cache["access_token"]
+
+        # Use Basic authentication header (OAuth 2.0 standard, RFC 6749 §2.3.1)
+        credentials = f"{settings.verify_client_id}:{settings.verify_client_secret}"
+        encoded = base64.b64encode(credentials.encode()).decode()
         response = await self._client.post(
             settings.verify_oidc_token_url,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": settings.verify_client_id,
-                "client_secret": settings.verify_client_secret,
+            data={"grant_type": "client_credentials"},
+            headers={
+                "Authorization": f"Basic {encoded}",
+                "Content-Type": "application/x-www-form-urlencoded",
             },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         response.raise_for_status()
-        return response.json()["access_token"]
+        token_data = response.json()
+        self._token_cache = token_data
+        # Cache for 45 minutes — tokens are valid for 60 min by default
+        self._token_expires_at = time.time() + 2700
+        logger.debug("Acquired IBM Verify service token (cached for 45m)")
+        return token_data["access_token"]
 
     async def _headers(self) -> dict[str, str]:
         token = await self._get_access_token()
@@ -101,11 +120,18 @@ class VerifyClient:
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users"
         body = {
+            "schemas": [
+                "urn:ietf:params:scim:schemas:core:2.0:User",
+                "urn:ietf:params:scim:schemas:extension:ibm:2.0:User",
+            ],
             "userName": email,
             "name": {"formatted": name},
             "emails": [{"value": email, "primary": True}],
             "active": active,
-            settings.verify_group_claim: [role],
+            # IBM Verify SCIM extension for group/role membership
+            "urn:ietf:params:scim:schemas:extension:ibm:2.0:User": {
+                "groups": [{"value": role, "type": "direct"}],
+            },
         }
         resp = await self._client.post(url, json=body, headers=headers)
         resp.raise_for_status()
@@ -115,10 +141,16 @@ class VerifyClient:
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users/{verify_user_id}"
         body = {
+            "schemas": [
+                "urn:ietf:params:scim:schemas:core:2.0:User",
+                "urn:ietf:params:scim:schemas:extension:ibm:2.0:User",
+            ],
             "userName": email,
             "name": {"formatted": name},
             "emails": [{"value": email, "primary": True}],
-            settings.verify_group_claim: [role],
+            "urn:ietf:params:scim:schemas:extension:ibm:2.0:User": {
+                "groups": [{"value": role, "type": "direct"}],
+            },
         }
         resp = await self._client.put(url, json=body, headers=headers)
         resp.raise_for_status()
@@ -137,6 +169,47 @@ class VerifyClient:
         url = f"{settings.verify_tenant_url}/v2.0/Users/{verify_user_id}"
         resp = await self._client.delete(url, headers=headers)
         resp.raise_for_status()
+
+    async def get_enrolled_factors(self, verify_user_id: str) -> dict:
+        """
+        Return the authentication factors enrolled by a user from IBM Verify.
+        Queries FIDO2, TOTP, and push registrations for the given user.
+        Returns a dict with keys: fido2, totp, push — each True/False.
+        """
+        headers = await self._headers()
+        results = {"fido2": False, "totp": False, "push": False}
+
+        try:
+            fido2_url = (
+                f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties"
+                f"/{settings.fido2_rp_id}/registrations"
+            )
+            r = await self._client.get(fido2_url, params={"userId": verify_user_id}, headers=headers)
+            if r.status_code == 200:
+                fido2_data = r.json()
+                results["fido2"] = len(fido2_data.get("fido2", fido2_data.get("registrations", []))) > 0
+        except Exception:
+            logger.debug("FIDO2 registration query failed for user %s", verify_user_id)
+
+        try:
+            totp_url = f"{settings.verify_tenant_url}/v2.0/factors/totp/registrations"
+            r = await self._client.get(totp_url, params={"userId": verify_user_id}, headers=headers)
+            if r.status_code == 200:
+                totp_data = r.json()
+                results["totp"] = len(totp_data.get("totpRegistrations", totp_data.get("registrations", []))) > 0
+        except Exception:
+            logger.debug("TOTP registration query failed for user %s", verify_user_id)
+
+        try:
+            push_url = f"{settings.verify_tenant_url}/v2.0/factors/push/registrations"
+            r = await self._client.get(push_url, params={"userId": verify_user_id}, headers=headers)
+            if r.status_code == 200:
+                push_data = r.json()
+                results["push"] = len(push_data.get("pushRegistrations", push_data.get("registrations", []))) > 0
+        except Exception:
+            logger.debug("Push registration query failed for user %s", verify_user_id)
+
+        return results
 
     # ── TOTP ──────────────────────────────────────────────────────────────
 
@@ -200,16 +273,19 @@ class VerifyClient:
 
     # ── OIDC / SSO ────────────────────────────────────────────────────────
 
-    async def oidc_token_exchange(self, code: str, redirect_uri: str) -> dict:
+    async def oidc_token_exchange(self, code: str, redirect_uri: str, code_verifier: str = "") -> dict:
         credentials = f"{settings.verify_client_id}:{settings.verify_client_secret}"
         encoded = base64.b64encode(credentials.encode()).decode()
+        body: dict[str, str] = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+        }
+        if code_verifier:
+            body["code_verifier"] = code_verifier
         resp = await self._client.post(
             settings.verify_oidc_token_url,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": redirect_uri,
-            },
+            data=body,
             headers={
                 "Authorization": f"Basic {encoded}",
                 "Content-Type": "application/x-www-form-urlencoded",

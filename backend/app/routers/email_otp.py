@@ -83,5 +83,5 @@ async def email_otp_verify(req: EmailOTPVerifyRequest, db: AsyncSession = Depend
         await seed_user_data(db, user.id, req.verify_user_id)
         await db.commit()
 
-    token = create_session_token(user.verify_user_id, user.email, user.name)
-    return {"token": token, "user": {"name": user.name, "email": user.email}}
+    token = create_session_token(user.verify_user_id, user.email, user.name, user.role)
+    return {"token": token, "user": {"name": user.name, "email": user.email, "role": user.role}}

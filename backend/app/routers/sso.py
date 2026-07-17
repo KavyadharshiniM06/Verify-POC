@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import logging
 import secrets
 import time
@@ -25,15 +27,26 @@ STATE_TTL_SECONDS = 300
 ROLE_PRIORITY = {"Admin": 3, "Manager": 2, "Customer": 1}
 
 
-def _build_authorize_url(state: str, nonce: str) -> str:
+def _pkce_pair() -> tuple[str, str]:
+    """Generate a PKCE code_verifier and its S256 code_challenge (RFC 7636)."""
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode()).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+def _build_authorize_url(state: str, nonce: str, code_challenge: str) -> str:
     params = urlencode(
         {
             "response_type": "code",
+            "response_mode": "query",
             "client_id": settings.verify_client_id,
             "redirect_uri": settings.oidc_redirect_uri,
             "scope": "openid profile email",
             "state": state,
             "nonce": nonce,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
         }
     )
     return f"{settings.verify_oidc_authorize_url}?{params}"
@@ -53,8 +66,13 @@ def _map_role(claims: dict) -> str:
 async def sso_login():
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
-    _pending_states[state] = {"nonce": nonce, "expires": time.time() + STATE_TTL_SECONDS}
-    return {"authorization_url": _build_authorize_url(state, nonce)}
+    code_verifier, code_challenge = _pkce_pair()
+    _pending_states[state] = {
+        "nonce": nonce,
+        "code_verifier": code_verifier,
+        "expires": time.time() + STATE_TTL_SECONDS,
+    }
+    return {"authorization_url": _build_authorize_url(state, nonce, code_challenge)}
 
 
 class CallbackRequest(BaseModel):
@@ -77,6 +95,7 @@ async def sso_callback(
         token_response = await verify_client.oidc_token_exchange(
             code=req.code,
             redirect_uri=settings.oidc_redirect_uri,
+            code_verifier=str(pending["code_verifier"]),
         )
     except Exception:
         logger.error("OIDC token exchange failed", exc_info=True)
@@ -86,6 +105,8 @@ async def sso_callback(
     if not id_token:
         raise HTTPException(status_code=502, detail="No ID token in response")
 
+    access_token = token_response.get("access_token", "")
+
     try:
         jwks = await verify_client.get_oidc_jwks()
         claims = jose_jwt.decode(
@@ -94,6 +115,7 @@ async def sso_callback(
             algorithms=["RS256"],
             audience=settings.verify_client_id,
             issuer=settings.verify_oidc_issuer,
+            access_token=access_token,   # required for at_hash validation
         )
     except JWTError:
         logger.error("ID token validation failed", exc_info=True)

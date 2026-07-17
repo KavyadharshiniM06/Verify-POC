@@ -11,6 +11,36 @@ from app.services.verify_client import verify_client
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+@router.get("/me")
+async def get_me(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return current user profile plus live enrollment status from IBM Verify.
+    Email OTP is always available (no pre-enrollment needed) so it is always True.
+    SSO is True if the user has a session (they logged in via OIDC).
+    """
+    try:
+        factors = await verify_client.get_enrolled_factors(current_user.verify_user_id)
+    except Exception:
+        factors = {"fido2": False, "totp": False, "push": False}
+
+    return {
+        "id": current_user.verify_user_id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "role": current_user.role,
+        "is_active": current_user.is_active,
+        "enrolled_factors": {
+            "fido2": factors["fido2"],
+            "totp": factors["totp"],
+            "push": factors["push"],
+            "email_otp": True,   # always available — no pre-enrollment required
+            "sso": True,         # user has a valid session so SSO is linked
+        },
+    }
+
+
 class ManagedUserRequest(BaseModel):
     email: EmailStr
     name: str

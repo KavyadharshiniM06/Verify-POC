@@ -84,8 +84,8 @@ async def register_complete(req: RegisterCompleteRequest, db: AsyncSession = Dep
         await seed_user_data(db, user.id, req.verify_user_id)
     await db.commit()
 
-    token = create_session_token(req.verify_user_id, req.email, req.name)
-    return {"token": token, "user": {"name": user.name, "email": user.email}}
+    token = create_session_token(req.verify_user_id, req.email, req.name, user.role)
+    return {"token": token, "user": {"name": user.name, "email": user.email, "role": user.role}}
 
 
 @router.post("/login/begin")
@@ -114,5 +114,5 @@ async def login_complete(req: LoginCompleteRequest, db: AsyncSession = Depends(g
     if not user:
         raise HTTPException(status_code=404, detail="User not found — register first")
 
-    token = create_session_token(user.verify_user_id, user.email, user.name)
-    return {"token": token, "user": {"name": user.name, "email": user.email}}
+    token = create_session_token(user.verify_user_id, user.email, user.name, user.role)
+    return {"token": token, "user": {"name": user.name, "email": user.email, "role": user.role}}

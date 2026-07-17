@@ -1,16 +1,17 @@
-FROM registry.redhat.io/ubi9/nodejs-20-minimal:latest
-
-# Run as non-root user (uid 1001 is the default non-root in ubi9-minimal images)
-USER 1001
+FROM node:20-slim
 
 WORKDIR /app
 
-# Copy package files and install dependencies
-COPY --chown=1001:1001 package.json ./
+# Install dependencies as root
+COPY package.json package-lock.json* ./
 RUN npm install
 
 # Copy application source
-COPY --chown=1001:1001 . .
+COPY . .
+
+# Drop to non-root for runtime
+RUN useradd -m -u 1001 appuser && chown -R 1001:1001 /app
+USER 1001
 
 EXPOSE 3000
 

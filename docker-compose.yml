@@ -5,6 +5,7 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend/src:/app/src:ro
+      - ./frontend/vite.config.ts:/app/vite.config.ts:ro
     env_file: .env
     depends_on:
       - backend

@@ -10,12 +10,28 @@ export default function OIDCCallbackPage() {
 
   useEffect(() => {
     const completeLogin = async () => {
-      const params = new URLSearchParams(window.location.search)
-      const code = params.get('code')
-      const state = params.get('state')
+      // IBM Verify may deliver code+state as query params (?code=…) or hash fragment (#code=…)
+      // depending on the response_mode configured on the application.
+      // We check query string first, then fall back to the hash fragment.
+      const queryParams = new URLSearchParams(window.location.search)
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+
+      const code = queryParams.get('code') ?? hashParams.get('code')
+      const state = queryParams.get('state') ?? hashParams.get('state')
+
+      // IBM Verify may also return an error param (e.g. access_denied)
+      const error = queryParams.get('error') ?? hashParams.get('error')
+      const errorDescription = queryParams.get('error_description') ?? hashParams.get('error_description')
+
+      if (error) {
+        setError(`IBM Verify returned an error: ${errorDescription ?? error}`)
+        return
+      }
 
       if (!code || !state) {
-        setError('Missing code or state in callback URL.')
+        // Log the raw URL for debugging
+        console.error('[OIDC Callback] Missing params. URL:', window.location.href)
+        setError(`Missing code or state in callback URL. Received: ${window.location.href}`)
         return
       }
 

@@ -3,7 +3,7 @@ import api from '../api/axios'
 
 export interface AuthResult {
   token: string
-  user: { name: string; email: string }
+  user: { name: string; email: string; role: string }
 }
 
 /**

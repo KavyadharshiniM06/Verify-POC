@@ -15,12 +15,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 bearer_scheme = HTTPBearer()
 
 
-def create_session_token(verify_user_id: str, email: str, name: str) -> str:
+def create_session_token(verify_user_id: str, email: str, name: str, role: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": verify_user_id,
         "email": email,
         "name": name,
+        "role": role,
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
@@ -45,6 +46,6 @@ async def get_current_user(
     verify_user_id = payload.get("sub")
     result = await db.execute(select(User).where(User.verify_user_id == verify_user_id))
     user = result.scalar_one_or_none()
-    if not user:
+    if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found")
     return user

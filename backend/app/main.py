@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import banking, email_otp, fido2, push, sso, totp
+from app.routers import banking, email_otp, fido2, push, sso, totp, users
 
 
 @asynccontextmanager
@@ -18,8 +18,8 @@ app = FastAPI(title="MockBank API", version="0.1.0", lifespan=lifespan)
 
 # CORS — only allow specific frontend origins, never "*"
 origins = [
-    "http://localhost:3000",
-    settings.fido2_rp_origin,  # ngrok https origin
+    settings.frontend_base_url,
+    settings.fido2_rp_origin,
 ]
 
 app.add_middleware(
@@ -36,6 +36,7 @@ app.include_router(totp.router)
 app.include_router(push.router)
 app.include_router(email_otp.router)
 app.include_router(sso.router)
+app.include_router(users.router)
 
 
 @app.delete("/auth/session")

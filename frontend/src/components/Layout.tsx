@@ -1,5 +1,5 @@
 import React from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
@@ -12,17 +12,23 @@ const NAV = [
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
-  const navigate = useNavigate()
 
   const handleLogout = async () => {
-    try { await api.delete('/auth/session') } catch { /* ignore */ }
-    logout()
-    navigate('/')
+    try {
+      const [{ data: logoutData }] = await Promise.all([
+        api.get('/auth/sso/logout'),
+        api.delete('/auth/session'),
+      ])
+      logout()
+      window.location.href = logoutData.logout_url
+    } catch {
+      logout()
+      window.location.href = '/'
+    }
   }
 
   return (
     <div style={s.root}>
-      {/* Sidebar */}
       <aside style={s.sidebar}>
         <div style={s.brand}>MockBank 🏦</div>
         <nav style={s.nav}>
@@ -38,10 +44,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </nav>
         <div style={s.sidebarFooter}>
           <div style={s.sidebarUser}>{user?.email}</div>
+          <div style={s.sidebarRole}>{user?.role}</div>
         </div>
       </aside>
 
-      {/* Main content area */}
       <div style={s.main}>
         <header style={s.header}>
           <span style={s.greeting}>
@@ -92,7 +98,8 @@ const s: Record<string, React.CSSProperties> = {
     paddingLeft: 'calc(1.5rem - 3px)',
   },
   sidebarFooter: { padding: '1rem 1.5rem', borderTop: '1px solid #30363d' },
-  sidebarUser: { fontSize: '0.75rem', color: '#57606a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  sidebarUser: { fontSize: '0.75rem', color: '#d1d5db', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  sidebarRole: { fontSize: '0.75rem', color: '#8b949e', marginTop: '0.25rem' },
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
   header: {
     background: '#fff',

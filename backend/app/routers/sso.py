@@ -87,6 +87,7 @@ def _build_authorize_url(
         "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
+        "prompt": "login",   # force re-authentication every time
     }
     if acr_values:
         params["acr_values"] = acr_values

@@ -1,65 +1,19 @@
 import React, { useState } from 'react'
 import api from '../api/axios'
 
-type Method = 'sso' | 'totp' | 'push' | 'email' | 'passkey'
-
-const AUTH_METHODS: Array<{
-  id: Method
-  icon: string
-  label: string
-  description: string
-  acr?: string   // IBM Verify acr_values to request this specific factor
-}> = [
-  {
-    id: 'sso',
-    icon: '🔐',
-    label: 'Login with IBM Verify (SSO)',
-    description: 'Federated login — IBM Verify handles authentication',
-  },
-  {
-    id: 'totp',
-    icon: '🔢',
-    label: 'Authenticator App (TOTP)',
-    description: 'Google Authenticator, Authy, or IBM Verify app',
-    acr: 'urn:ibm:security:authentication:asf:mechanism:totp',
-  },
-  {
-    id: 'email',
-    icon: '📧',
-    label: 'Email One-Time Code',
-    description: 'IBM Verify sends a code to your registered email',
-    acr: 'urn:ibm:security:authentication:asf:mechanism:emailotp',
-  },
-  {
-    id: 'push',
-    icon: '📱',
-    label: 'IBM Verify Push Notification',
-    description: 'Approve a push notification on your enrolled device',
-    acr: 'urn:ibm:security:authentication:asf:mechanism:push',
-  },
-  {
-    id: 'passkey',
-    icon: '🪪',
-    label: 'Passkey (Face ID / Touch ID)',
-    description: 'Biometric login via WebAuthn — requires ngrok setup',
-    acr: 'urn:ibm:security:authentication:asf:mechanism:fido2',
-  },
-]
-
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState<Method | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleSelect = async (method: Method, acr?: string) => {
+  const handleLogin = async () => {
     setError(null)
-    setLoading(method)
+    setLoading(true)
     try {
-      const params = acr ? `?acr_values=${encodeURIComponent(acr)}` : ''
-      const { data } = await api.get(`/auth/sso/login${params}`)
+      const { data } = await api.get('/auth/sso/login')
       window.location.href = data.authorization_url
     } catch {
       setError('Unable to connect to IBM Verify. Please try again.')
-      setLoading(null)
+      setLoading(false)
     }
   }
 
@@ -69,33 +23,50 @@ export default function LoginPage() {
         <div style={s.logo}>🏦</div>
         <h1 style={s.title}>MockBank</h1>
         <p style={s.tagline}>Powered by IBM Verify SaaS</p>
+
+        <div style={s.divider} />
+
         <p style={s.description}>
-          Choose how you'd like to authenticate. All methods are handled by IBM Verify.
+          Sign in using IBM Verify. On the next page you can choose your
+          preferred authentication method — password, TOTP, email OTP, push
+          notification, or passkey.
         </p>
 
         {error && <div style={s.error}>{error}</div>}
 
-        <div style={s.methodList}>
-          {AUTH_METHODS.map(m => (
-            <button
-              key={m.id}
-              style={{
-                ...s.methodBtn,
-                opacity: loading && loading !== m.id ? 0.5 : 1,
-              }}
-              onClick={() => handleSelect(m.id, m.acr)}
-              disabled={loading !== null}
-            >
-              <span style={s.methodIcon}>{m.icon}</span>
-              <span style={s.methodText}>
-                <span style={s.methodLabel}>{m.label}</span>
-                <span style={s.methodDesc}>{m.description}</span>
+        <button style={s.ssoBtn} onClick={handleLogin} disabled={loading}>
+          {loading ? (
+            <span style={s.btnInner}>
+              <span style={s.spinner} /> Redirecting to IBM Verify…
+            </span>
+          ) : (
+            <span style={s.btnInner}>
+              <span style={s.ibmIcon}>
+                <svg width="20" height="20" viewBox="0 0 32 32" fill="currentColor">
+                  <path d="M0 6h32v2H0zm4 4h24v2H4zm-4 4h32v2H0zm4 4h24v2H4zm-4 4h32v2H0zm4 4h24v2H4zm-4 4h32v2H0z"/>
+                </svg>
               </span>
-              <span style={s.arrow}>
-                {loading === m.id ? '…' : '›'}
-              </span>
-            </button>
-          ))}
+              Sign in with IBM Verify
+            </span>
+          )}
+        </button>
+
+        <div style={s.methodsHint}>
+          <p style={s.hintTitle}>Available authentication methods</p>
+          <div style={s.methodGrid}>
+            {[
+              { icon: '🔑', label: 'Username & Password' },
+              { icon: '🔢', label: 'TOTP Authenticator' },
+              { icon: '📧', label: 'Email OTP' },
+              { icon: '📱', label: 'Push Notification' },
+              { icon: '🪪', label: 'Passkey / FIDO2' },
+            ].map(m => (
+              <div key={m.label} style={s.methodChip}>
+                <span>{m.icon}</span>
+                <span style={s.chipLabel}>{m.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -117,17 +88,18 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: '12px',
     padding: '2.5rem 2rem',
     width: '100%',
-    maxWidth: '440px',
+    maxWidth: '420px',
     textAlign: 'center',
   },
   logo: { fontSize: '3rem', marginBottom: '0.5rem' },
   title: { margin: '0 0 0.25rem', fontSize: '1.75rem', fontWeight: 700, color: '#1f2328' },
-  tagline: { color: '#57606a', fontSize: '0.95rem', marginBottom: '0.4rem' },
+  tagline: { color: '#57606a', fontSize: '0.9rem', margin: '0 0 1.25rem' },
+  divider: { height: '1px', background: '#e5e7eb', margin: '0 0 1.25rem' },
   description: {
     color: '#57606a',
     fontSize: '0.85rem',
+    lineHeight: 1.6,
     marginBottom: '1.5rem',
-    lineHeight: 1.5,
   },
   error: {
     background: '#fef2f2',
@@ -136,30 +108,66 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: '6px',
     padding: '0.6rem',
     fontSize: '0.85rem',
-    marginBottom: '0.75rem',
+    marginBottom: '1rem',
   },
-  methodList: { display: 'flex', flexDirection: 'column', gap: '0.5rem' },
-  methodBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
+  ssoBtn: {
     width: '100%',
     padding: '0.85rem 1rem',
+    background: '#1f2328',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+    marginBottom: '1.5rem',
+  },
+  btnInner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+  },
+  ibmIcon: { display: 'flex', alignItems: 'center' },
+  spinner: {
+    display: 'inline-block',
+    width: '14px',
+    height: '14px',
+    border: '2px solid rgba(255,255,255,0.3)',
+    borderTopColor: '#fff',
+    borderRadius: '50%',
+    animation: 'spin 0.7s linear infinite',
+  },
+  methodsHint: {
     background: '#f7f8fa',
     border: '1px solid #e5e7eb',
     borderRadius: '8px',
-    cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'border-color 0.15s',
+    padding: '0.875rem',
   },
-  methodIcon: { fontSize: '1.3rem', flexShrink: 0, width: '1.75rem', textAlign: 'center' },
-  methodText: {
-    flex: 1,
+  hintTitle: {
+    fontSize: '0.75rem',
+    fontWeight: 600,
+    color: '#57606a',
+    marginBottom: '0.6rem',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+  },
+  methodGrid: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '0.1rem',
+    flexWrap: 'wrap' as const,
+    gap: '0.4rem',
+    justifyContent: 'center',
   },
-  methodLabel: { fontSize: '0.875rem', fontWeight: 600, color: '#1f2328' },
-  methodDesc: { fontSize: '0.75rem', color: '#57606a' },
-  arrow: { fontSize: '1.1rem', color: '#57606a', flexShrink: 0 },
+  methodChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: '999px',
+    padding: '0.2rem 0.6rem',
+    fontSize: '0.75rem',
+    color: '#1f2328',
+  },
+  chipLabel: { fontWeight: 500 },
 }

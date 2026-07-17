@@ -73,21 +73,26 @@ def _pkce_pair() -> "tuple[str, str]":
     return verifier, challenge
 
 
-def _build_authorize_url(state: str, nonce: str, code_challenge: str) -> str:
-    params = urlencode(
-        {
-            "response_type": "code",
-            "response_mode": "query",
-            "client_id": settings.verify_client_id,
-            "redirect_uri": settings.oidc_redirect_uri,
-            "scope": "openid profile email",
-            "state": state,
-            "nonce": nonce,
-            "code_challenge": code_challenge,
-            "code_challenge_method": "S256",
-        }
-    )
-    return f"{settings.verify_oidc_authorize_url}?{params}"
+def _build_authorize_url(
+    state: str, nonce: str, code_challenge: str,
+    acr_values: str = "", login_hint: str = ""
+) -> str:
+    params: dict = {
+        "response_type": "code",
+        "response_mode": "query",
+        "client_id": settings.verify_client_id,
+        "redirect_uri": settings.oidc_redirect_uri,
+        "scope": "openid profile email",
+        "state": state,
+        "nonce": nonce,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    if acr_values:
+        params["acr_values"] = acr_values
+    if login_hint:
+        params["login_hint"] = login_hint
+    return f"{settings.verify_oidc_authorize_url}?{urlencode(params)}"
 
 
 def _map_role(claims: dict) -> str:
@@ -101,7 +106,7 @@ def _map_role(claims: dict) -> str:
 
 
 @router.get("/login")
-async def sso_login():
+async def sso_login(acr_values: str = "", login_hint: str = ""):
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     code_verifier, code_challenge = _pkce_pair()
@@ -110,7 +115,7 @@ async def sso_login():
         "code_verifier": code_verifier,
         "expires": time.time() + STATE_TTL_SECONDS,
     })
-    return {"authorization_url": _build_authorize_url(state, nonce, code_challenge)}
+    return {"authorization_url": _build_authorize_url(state, nonce, code_challenge, acr_values, login_hint)}
 
 
 class CallbackRequest(BaseModel):

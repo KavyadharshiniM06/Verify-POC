@@ -1,70 +1,66 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 
-type Method = 'sso' | 'passkey' | 'totp' | 'push' | 'email'
+type Method = 'sso' | 'totp' | 'push' | 'email' | 'passkey'
 
-const AUTH_METHODS: Array<{ id: Method; icon: string; label: string; description: string }> = [
+const AUTH_METHODS: Array<{
+  id: Method
+  icon: string
+  label: string
+  description: string
+  acr?: string   // IBM Verify acr_values to request this specific factor
+}> = [
   {
     id: 'sso',
     icon: '🔐',
     label: 'Login with IBM Verify (SSO)',
-    description: 'Federated login via IBM Verify — recommended',
-  },
-  {
-    id: 'passkey',
-    icon: '🪪',
-    label: 'Passkey (Face ID / Touch ID)',
-    description: 'Biometric authentication with WebAuthn',
+    description: 'Federated login — IBM Verify handles authentication',
   },
   {
     id: 'totp',
     icon: '🔢',
     label: 'Authenticator App (TOTP)',
     description: 'Google Authenticator, Authy, or IBM Verify app',
-  },
-  {
-    id: 'push',
-    icon: '📱',
-    label: 'IBM Verify Push Notification',
-    description: 'Approve a push sent to your enrolled device',
+    acr: 'urn:ibm:security:authentication:asf:mechanism:totp',
   },
   {
     id: 'email',
     icon: '📧',
     label: 'Email One-Time Code',
-    description: 'Receive a code in your inbox',
+    description: 'IBM Verify sends a code to your registered email',
+    acr: 'urn:ibm:security:authentication:asf:mechanism:emailotp',
+  },
+  {
+    id: 'push',
+    icon: '📱',
+    label: 'IBM Verify Push Notification',
+    description: 'Approve a push notification on your enrolled device',
+    acr: 'urn:ibm:security:authentication:asf:mechanism:push',
+  },
+  {
+    id: 'passkey',
+    icon: '🪪',
+    label: 'Passkey (Face ID / Touch ID)',
+    description: 'Biometric login via WebAuthn — requires ngrok setup',
+    acr: 'urn:ibm:security:authentication:asf:mechanism:fido2',
   },
 ]
 
-const ROUTES: Record<Method, string | null> = {
-  sso: null,          // handled inline — redirects to IBM Verify
-  passkey: '/register',
-  totp: '/auth/totp/verify',
-  push: '/auth/push',
-  email: '/auth/email-otp',
-}
-
 export default function LoginPage() {
-  const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState<Method | null>(null)
 
-  const handleSelect = async (method: Method) => {
+  const handleSelect = async (method: Method, acr?: string) => {
     setError(null)
-    if (method === 'sso') {
-      setLoading(true)
-      try {
-        const { data } = await api.get('/auth/sso/login')
-        window.location.href = data.authorization_url
-      } catch {
-        setError('Unable to start IBM Verify login. Please try again.')
-        setLoading(false)
-      }
-      return
+    setLoading(method)
+    try {
+      const params = acr ? `?acr_values=${encodeURIComponent(acr)}` : ''
+      const { data } = await api.get(`/auth/sso/login${params}`)
+      window.location.href = data.authorization_url
+    } catch {
+      setError('Unable to connect to IBM Verify. Please try again.')
+      setLoading(null)
     }
-    const route = ROUTES[method]
-    if (route) navigate(route)
   }
 
   return (
@@ -83,16 +79,21 @@ export default function LoginPage() {
           {AUTH_METHODS.map(m => (
             <button
               key={m.id}
-              style={s.methodBtn}
-              onClick={() => handleSelect(m.id)}
-              disabled={loading}
+              style={{
+                ...s.methodBtn,
+                opacity: loading && loading !== m.id ? 0.5 : 1,
+              }}
+              onClick={() => handleSelect(m.id, m.acr)}
+              disabled={loading !== null}
             >
               <span style={s.methodIcon}>{m.icon}</span>
               <span style={s.methodText}>
                 <span style={s.methodLabel}>{m.label}</span>
                 <span style={s.methodDesc}>{m.description}</span>
               </span>
-              <span style={s.arrow}>›</span>
+              <span style={s.arrow}>
+                {loading === m.id ? '…' : '›'}
+              </span>
             </button>
           ))}
         </div>

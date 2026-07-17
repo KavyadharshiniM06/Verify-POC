@@ -65,9 +65,8 @@ class VerifyClient:
             logger.debug("No admin credentials — falling back to client_credentials token")
             return await self._get_access_token()
 
-        api_client_id = settings.verify_api_client_id or settings.verify_client_id
-        api_client_secret = settings.verify_api_client_secret or settings.verify_client_secret
-        credentials = f"{api_client_id}:{api_client_secret}"
+        # ROPC must use the OIDC application client (which has ROPC grant enabled)
+        credentials = f"{settings.verify_client_id}:{settings.verify_client_secret}"
         encoded = base64.b64encode(credentials.encode()).decode()
         response = await self._client.post(
             settings.verify_oidc_token_url,
@@ -263,15 +262,21 @@ class VerifyClient:
     # ── TOTP ──────────────────────────────────────────────────────────────
 
     async def totp_enroll(self, user_id: str) -> dict:
-        headers = await self._admin_headers()
+        """
+        Enroll TOTP for a user. Returns transaction_id + otpauth URI.
+        Uses /v2.0/factors/totp/verifications (POST) with app-level client token.
+        """
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/totp/verifications"
         body = {"userId": user_id}
         resp = await self._client.post(url, json=body, headers=headers)
+        if not resp.is_success:
+            logger.error("TOTP enroll error %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.json()
 
     async def totp_verify(self, transaction_id: str, otp_code: str) -> dict:
-        headers = await self._admin_headers()
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/totp/verifications/{transaction_id}"
         body = {"otp": otp_code}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -281,7 +286,7 @@ class VerifyClient:
     # ── Push Notifications ────────────────────────────────────────────────
 
     async def push_initiate(self, user_id: str) -> dict:
-        headers = await self._admin_headers()
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/push/verifications"
         body = {
             "userId": user_id,
@@ -296,7 +301,7 @@ class VerifyClient:
         return resp.json()
 
     async def push_poll(self, transaction_id: str) -> dict:
-        headers = await self._admin_headers()
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/push/verifications/{transaction_id}"
         resp = await self._client.get(url, headers=headers)
         resp.raise_for_status()
@@ -304,19 +309,55 @@ class VerifyClient:
 
     # ── Email OTP ─────────────────────────────────────────────────────────
 
-    async def email_otp_send(self, user_id: str, email: str) -> dict:
-        headers = await self._admin_headers()
-        url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications"
-        body = {"userId": user_id, "email": email}
+    async def email_otp_enroll(self, user_id: str, email: str) -> dict:
+        """Create an Email OTP enrollment for a user (if not already enrolled)."""
+        headers = await self._headers()
+        # Check existing enrollments first
+        url_list = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
+        resp = await self._client.get(url_list, params={"userId": user_id}, headers=headers)
+        if resp.is_success:
+            existing = resp.json().get("emailotp", [])
+            enabled = [e for e in existing if e.get("enabled")]
+            if enabled:
+                return enabled[0]  # Already enrolled
+        # Create new enrollment
+        url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
+        body = {"userId": user_id, "emailAddress": email}
         resp = await self._client.post(url, json=body, headers=headers)
+        if resp.is_success:
+            enrollment = resp.json()
+            # Enable it
+            eid = enrollment.get("id")
+            if eid:
+                await self._client.put(
+                    f"{settings.verify_tenant_url}/v2.0/factors/emailotp/{eid}",
+                    json={**enrollment, "enabled": True, "validated": True},
+                    headers=headers,
+                )
+        if not resp.is_success:
+            logger.error("Email OTP enroll error %s: %s", resp.status_code, resp.text)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def email_otp_send(self, user_id: str, email: str) -> dict:
+        """Send OTP to user's enrolled email. Enrolls first if needed."""
+        headers = await self._headers()
+        # Ensure enrollment exists and is enabled
+        await self.email_otp_enroll(user_id, email)
+        # Send OTP via PUT
+        url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications"
+        body = {"userId": user_id}
+        resp = await self._client.put(url, json=body, headers=headers)
+        if not resp.is_success:
+            logger.error("Email OTP send error %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.json()
 
     async def email_otp_verify(self, transaction_id: str, otp_code: str) -> dict:
-        headers = await self._admin_headers()
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications/{transaction_id}"
         body = {"otp": otp_code}
-        resp = await self._client.post(url, json=body, headers=headers)
+        resp = await self._client.put(url, json=body, headers=headers)
         resp.raise_for_status()
         return resp.json()
 

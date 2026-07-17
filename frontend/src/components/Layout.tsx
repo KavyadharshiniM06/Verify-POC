@@ -14,17 +14,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
 
   const handleLogout = async () => {
-    try {
-      const [{ data: logoutData }] = await Promise.all([
-        api.get('/auth/sso/logout'),
-        api.delete('/auth/session'),
-      ])
-      logout()
-      window.location.href = logoutData.logout_url
-    } catch {
-      logout()
-      window.location.href = '/'
-    }
+    logout()
+    // Clear session on backend (fire-and-forget)
+    api.delete('/auth/session').catch(() => {})
+    window.location.href = '/'
   }
 
   return (

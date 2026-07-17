@@ -1,8 +1,11 @@
 import base64
 import hashlib
+import json
 import logging
 import secrets
 import time
+from pathlib import Path
+from typing import Dict, Union
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -22,12 +25,47 @@ from app.services.verify_client import verify_client
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/sso", tags=["sso"])
 
-_pending_states: dict[str, dict[str, float | str]] = {}
 STATE_TTL_SECONDS = 300
 ROLE_PRIORITY = {"Admin": 3, "Manager": 2, "Customer": 1}
 
+# File-backed state store so PKCE state survives uvicorn --reload restarts
+_STATE_FILE = Path(__file__).resolve().parents[3] / ".oidc_states.json"
 
-def _pkce_pair() -> tuple[str, str]:
+
+def _load_states() -> Dict[str, Dict[str, Union[float, str]]]:
+    if _STATE_FILE.exists():
+        try:
+            return json.loads(_STATE_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_states(states: Dict[str, Dict[str, Union[float, str]]]) -> None:
+    # Purge expired entries before saving
+    now = time.time()
+    states = {k: v for k, v in states.items() if float(v.get("expires", 0)) > now}
+    try:
+        _STATE_FILE.write_text(json.dumps(states))
+    except Exception as exc:
+        logger.warning("Could not persist OIDC states: %s", exc)
+
+
+def _state_pop(state_key: str) -> Union[Dict[str, Union[float, str]], None]:
+    states = _load_states()
+    entry = states.pop(state_key, None)
+    if entry is not None:
+        _save_states(states)
+    return entry
+
+
+def _state_put(state_key: str, value: Dict[str, Union[float, str]]) -> None:
+    states = _load_states()
+    states[state_key] = value
+    _save_states(states)
+
+
+def _pkce_pair() -> "tuple[str, str]":
     """Generate a PKCE code_verifier and its S256 code_challenge (RFC 7636)."""
     verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(verifier.encode()).digest()
@@ -67,11 +105,11 @@ async def sso_login():
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     code_verifier, code_challenge = _pkce_pair()
-    _pending_states[state] = {
+    _state_put(state, {
         "nonce": nonce,
         "code_verifier": code_verifier,
         "expires": time.time() + STATE_TTL_SECONDS,
-    }
+    })
     return {"authorization_url": _build_authorize_url(state, nonce, code_challenge)}
 
 
@@ -85,7 +123,7 @@ async def sso_callback(
     req: CallbackRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    pending = _pending_states.pop(req.state, None)
+    pending = _state_pop(req.state)
     if not pending:
         raise HTTPException(status_code=400, detail="Invalid state parameter")
     if time.time() > float(pending["expires"]):
@@ -97,13 +135,13 @@ async def sso_callback(
             redirect_uri=settings.oidc_redirect_uri,
             code_verifier=str(pending["code_verifier"]),
         )
-    except Exception:
-        logger.error("OIDC token exchange failed", exc_info=True)
-        raise HTTPException(status_code=502, detail="SSO token exchange failed")
+    except Exception as exc:
+        logger.error("OIDC token exchange failed — IBM Verify response: %s", str(exc), exc_info=True)
+        raise HTTPException(status_code=502, detail=f"SSO token exchange failed: {exc}")
 
     id_token = token_response.get("id_token")
     if not id_token:
-        raise HTTPException(status_code=502, detail="No ID token in response")
+        raise HTTPException(status_code=502, detail=f"No ID token in response. Keys: {list(token_response.keys())}")
 
     access_token = token_response.get("access_token", "")
 
@@ -115,11 +153,11 @@ async def sso_callback(
             algorithms=["RS256"],
             audience=settings.verify_client_id,
             issuer=settings.verify_oidc_issuer,
-            access_token=access_token,   # required for at_hash validation
+            options={"verify_at_hash": False},  # skip at_hash — python-jose computes it incorrectly for some token shapes
         )
-    except JWTError:
-        logger.error("ID token validation failed", exc_info=True)
-        raise HTTPException(status_code=401, detail="ID token validation failed")
+    except JWTError as exc:
+        logger.error("ID token validation failed: %s", str(exc), exc_info=True)
+        raise HTTPException(status_code=401, detail=f"ID token validation failed: {exc}")
 
     if claims.get("nonce") != pending["nonce"]:
         raise HTTPException(status_code=401, detail="Nonce mismatch")

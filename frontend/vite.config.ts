@@ -12,9 +12,8 @@ export default defineConfig({
     historyApiFallback: true,
     proxy: {
       '/api': {
-        // In Docker Compose the backend service is reachable as 'backend'.
-        // For local dev outside Docker change this to 'http://127.0.0.1:8000'.
-        target: 'http://backend:8000',
+        // Local dev — backend running on 127.0.0.1:8000
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }

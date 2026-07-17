@@ -5,7 +5,7 @@ Access tokens are never logged.
 """
 import base64
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -17,27 +17,29 @@ logger = logging.getLogger(__name__)
 class VerifyClient:
     def __init__(self):
         self._client = httpx.AsyncClient(timeout=30.0)
-        self._token_cache: dict[str, str] = {}  # Simple in-memory cache
+        # client_credentials token cache
+        self._token_cache: dict[str, str] = {}
         self._token_expires_at = 0.0
+        # ROPC admin token cache (used for factor APIs)
+        self._admin_token_cache: dict[str, str] = {}
+        self._admin_token_expires_at = 0.0
 
     async def _get_access_token(self) -> str:
-        """
-        Obtain an IBM Verify access token using client_credentials grant.
-        Tokens are cached for 45 minutes (default IBM Verify token expiry is 60 min).
-
-        NOTE: The client_credentials grant must be enabled in IBM Verify Admin Console:
-          Applications → MockBank POC → Sign-on → Grant types → enable "Client credentials"
-        """
+        """Client credentials token — for user/directory API calls."""
         import time
         if self._token_cache and time.time() < self._token_expires_at:
             return self._token_cache["access_token"]
 
-        # Use Basic authentication header (OAuth 2.0 standard, RFC 6749 §2.3.1)
-        credentials = f"{settings.verify_client_id}:{settings.verify_client_secret}"
+        api_client_id = settings.verify_api_client_id or settings.verify_client_id
+        api_client_secret = settings.verify_api_client_secret or settings.verify_client_secret
+        credentials = f"{api_client_id}:{api_client_secret}"
         encoded = base64.b64encode(credentials.encode()).decode()
         response = await self._client.post(
             settings.verify_oidc_token_url,
-            data={"grant_type": "client_credentials"},
+            data={
+                "grant_type": "client_credentials",
+                "scope": "manageAuthFactors authenticatorConfig manageUsers readUsers manageUserStandardGroups readUserGroups",
+            },
             headers={
                 "Authorization": f"Basic {encoded}",
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -46,13 +48,60 @@ class VerifyClient:
         response.raise_for_status()
         token_data = response.json()
         self._token_cache = token_data
-        # Cache for 45 minutes — tokens are valid for 60 min by default
         self._token_expires_at = time.time() + 2700
         logger.debug("Acquired IBM Verify service token (cached for 45m)")
         return token_data["access_token"]
 
+    async def _get_admin_token(self) -> str:
+        """
+        ROPC token using admin credentials — required for /v2.0/factors/* APIs.
+        Falls back to client_credentials token if admin creds not configured.
+        """
+        import time
+        if self._admin_token_cache and time.time() < self._admin_token_expires_at:
+            return self._admin_token_cache["access_token"]
+
+        if not settings.verify_admin_username or not settings.verify_admin_password:
+            logger.debug("No admin credentials — falling back to client_credentials token")
+            return await self._get_access_token()
+
+        api_client_id = settings.verify_api_client_id or settings.verify_client_id
+        api_client_secret = settings.verify_api_client_secret or settings.verify_client_secret
+        credentials = f"{api_client_id}:{api_client_secret}"
+        encoded = base64.b64encode(credentials.encode()).decode()
+        response = await self._client.post(
+            settings.verify_oidc_token_url,
+            data={
+                "grant_type": "password",
+                "username": settings.verify_admin_username,
+                "password": settings.verify_admin_password,
+                "scope": "manageAuthFactors authenticatorConfig manageUsers readUsers manageUserStandardGroups readUserGroups openid",
+            },
+            headers={
+                "Authorization": f"Basic {encoded}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        if not response.is_success:
+            logger.error("Admin ROPC token failed %s: %s", response.status_code, response.text)
+            response.raise_for_status()
+        token_data = response.json()
+        self._admin_token_cache = token_data
+        self._admin_token_expires_at = time.time() + 2700
+        logger.debug("Acquired IBM Verify admin token via ROPC (cached for 45m)")
+        return token_data["access_token"]
+
     async def _headers(self) -> dict[str, str]:
         token = await self._get_access_token()
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    async def _admin_headers(self) -> dict[str, str]:
+        """Headers using admin ROPC token — for factor enrollment/verification APIs."""
+        token = await self._get_admin_token()
         return {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -67,7 +116,7 @@ class VerifyClient:
     # ── FIDO2/WebAuthn ────────────────────────────────────────────────────
 
     async def fido2_register_begin(self, user_id: str, username: str, display_name: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/attestation/options"
         body = {
             "userId": user_id,
@@ -79,7 +128,7 @@ class VerifyClient:
         return resp.json()
 
     async def fido2_register_complete(self, user_id: str, attestation_response: dict) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/attestation/result"
         body = {"userId": user_id, **attestation_response}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -87,7 +136,7 @@ class VerifyClient:
         return resp.json()
 
     async def fido2_login_begin(self, user_id: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/assertion/options"
         body = {"userId": user_id}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -95,7 +144,7 @@ class VerifyClient:
         return resp.json()
 
     async def fido2_login_complete(self, assertion_response: dict) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/assertion/result"
         resp = await self._client.post(url, json=assertion_response, headers=headers)
         resp.raise_for_status()
@@ -108,7 +157,7 @@ class VerifyClient:
         resp.raise_for_status()
         return resp.json()
 
-    async def find_user_by_email(self, email: str) -> dict | None:
+    async def find_user_by_email(self, email: str) -> Optional[dict]:
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users"
         resp = await self._client.get(url, params={"filter": f'email eq "{email}"'}, headers=headers)
@@ -176,7 +225,7 @@ class VerifyClient:
         Queries FIDO2, TOTP, and push registrations for the given user.
         Returns a dict with keys: fido2, totp, push — each True/False.
         """
-        headers = await self._headers()
+        headers = await self._admin_headers()
         results = {"fido2": False, "totp": False, "push": False}
 
         try:
@@ -214,7 +263,7 @@ class VerifyClient:
     # ── TOTP ──────────────────────────────────────────────────────────────
 
     async def totp_enroll(self, user_id: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/totp/verifications"
         body = {"userId": user_id}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -222,7 +271,7 @@ class VerifyClient:
         return resp.json()
 
     async def totp_verify(self, transaction_id: str, otp_code: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/totp/verifications/{transaction_id}"
         body = {"otp": otp_code}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -232,7 +281,7 @@ class VerifyClient:
     # ── Push Notifications ────────────────────────────────────────────────
 
     async def push_initiate(self, user_id: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/push/verifications"
         body = {
             "userId": user_id,
@@ -247,7 +296,7 @@ class VerifyClient:
         return resp.json()
 
     async def push_poll(self, transaction_id: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/push/verifications/{transaction_id}"
         resp = await self._client.get(url, headers=headers)
         resp.raise_for_status()
@@ -256,7 +305,7 @@ class VerifyClient:
     # ── Email OTP ─────────────────────────────────────────────────────────
 
     async def email_otp_send(self, user_id: str, email: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications"
         body = {"userId": user_id, "email": email}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -264,7 +313,7 @@ class VerifyClient:
         return resp.json()
 
     async def email_otp_verify(self, transaction_id: str, otp_code: str) -> dict:
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications/{transaction_id}"
         body = {"otp": otp_code}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -291,6 +340,12 @@ class VerifyClient:
                 "Content-Type": "application/x-www-form-urlencoded",
             },
         )
+        if not resp.is_success:
+            logger.error(
+                "IBM Verify token endpoint error %s: %s",
+                resp.status_code,
+                resp.text,
+            )
         resp.raise_for_status()
         return resp.json()
 

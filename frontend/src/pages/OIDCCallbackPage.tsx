@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
@@ -7,8 +7,13 @@ export default function OIDCCallbackPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
   const [error, setError] = useState<string | null>(null)
+  // Guard against React StrictMode double-invocation — the auth code is single-use.
+  const called = useRef(false)
 
   useEffect(() => {
+    if (called.current) return
+    called.current = true
+
     const completeLogin = async () => {
       // IBM Verify may deliver code+state as query params (?code=…) or hash fragment (#code=…)
       // depending on the response_mode configured on the application.
@@ -29,7 +34,6 @@ export default function OIDCCallbackPage() {
       }
 
       if (!code || !state) {
-        // Log the raw URL for debugging
         console.error('[OIDC Callback] Missing params. URL:', window.location.href)
         setError(`Missing code or state in callback URL. Received: ${window.location.href}`)
         return

@@ -15,7 +15,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt_handler import create_session_token, get_current_user
+from app.auth.jwt_handler import (
+    create_session_token,
+    create_stepup_token,
+    decode_stepup_token,
+    get_current_user,
+)
 from app.config import settings
 from app.database import get_db
 from app.models import User
@@ -75,13 +80,14 @@ def _pkce_pair() -> "tuple[str, str]":
 
 def _build_authorize_url(
     state: str, nonce: str, code_challenge: str,
-    acr_values: str = "", login_hint: str = ""
+    acr_values: str = "", login_hint: str = "",
+    redirect_uri: str = "",
 ) -> str:
     params: dict = {
         "response_type": "code",
         "response_mode": "query",
         "client_id": settings.verify_client_id,
-        "redirect_uri": settings.oidc_redirect_uri,
+        "redirect_uri": redirect_uri or settings.oidc_redirect_uri,
         "scope": "openid profile email",
         "state": state,
         "nonce": nonce,
@@ -106,11 +112,19 @@ def _map_role(claims: dict) -> str:
     return max(matched_roles, key=lambda role: ROLE_PRIORITY[role])
 
 
+# IBM Verify ACR value — used only for the transfer step-up flow.
+_MFA_ACR = "urn:ibm:security:authentication:asf:basicauth_and_any_secondfactor"
+
+
 @router.get("/login")
 async def sso_login(acr_values: str = "", login_hint: str = ""):
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     code_verifier, code_challenge = _pkce_pair()
+    # First leg: plain identity-only login — no acr_values yet.
+    # We learn the user's role from the ID token, then decide whether to
+    # trigger a step-up MFA challenge in the callback handler.
+    # Callers may still override by passing acr_values explicitly.
     _state_put(state, {
         "nonce": nonce,
         "code_verifier": code_verifier,
@@ -177,6 +191,13 @@ async def sso_callback(
 
     result = await db.execute(select(User).where(User.verify_user_id == verify_user_id))
     user = result.scalar_one_or_none()
+
+    if not user:
+        # Fallback: same email may exist under an old verify_user_id (e.g. user was
+        # recreated in IBM Verify). Reclaim the record instead of inserting a duplicate.
+        result2 = await db.execute(select(User).where(User.email == email))
+        user = result2.scalar_one_or_none()
+
     if not user:
         user = User(
             verify_user_id=verify_user_id,
@@ -189,6 +210,7 @@ async def sso_callback(
         await db.flush()
         await seed_user_data(db, user.id, verify_user_id)
     else:
+        user.verify_user_id = verify_user_id  # update if it changed
         user.email = email
         user.name = name
         user.role = role
@@ -197,9 +219,14 @@ async def sso_callback(
     await db.commit()
     await db.refresh(user)
 
-    token = create_session_token(user.verify_user_id, user.email, user.name, user.role)
+    # IBM Verify Access Policy enforced MFA for the required groups before returning
+    # the authorisation code. We unconditionally trust the completed OIDC flow.
+    token = create_session_token(
+        user.verify_user_id, user.email, user.name, user.role, mfa_verified=True
+    )
     return {
         "token": token,
+        "mfa_verified": True,
         "user": {
             "name": user.name,
             "email": user.email,
@@ -214,6 +241,129 @@ async def get_session_user(current_user: User = Depends(get_current_user)):
         "name": current_user.name,
         "email": current_user.email,
         "role": current_user.role,
+    }
+
+
+# ── Step-up authentication ────────────────────────────────────────────────────
+# Used when a user has a valid session but needs to re-verify with MFA before
+# performing a sensitive action (e.g. bank transfer).
+
+
+class StepUpInitiateRequest(BaseModel):
+    return_to: str = "/transfers"
+
+
+@router.post("/stepup/initiate")
+async def stepup_initiate(
+    req: StepUpInitiateRequest,
+    current_user=Depends(get_current_user),
+):
+    """
+    Begin a step-up MFA challenge for an already-authenticated user.
+    Returns an IBM Verify authorization URL that enforces MFA, plus a
+    short-lived step_up_token encoding the return destination.
+    The frontend opens the IBM Verify URL and sends the resulting
+    code+state back to /auth/sso/stepup/complete.
+    """
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    code_verifier, code_challenge = _pkce_pair()
+    stepup_uri = settings.stepup_redirect_uri or settings.oidc_redirect_uri.replace(
+        "/callback", "/stepup-callback"
+    )
+    _state_put(state, {
+        "nonce": nonce,
+        "code_verifier": code_verifier,
+        "expires": time.time() + STATE_TTL_SECONDS,
+        "mfa": "1",
+        "stepup": "1",
+        "return_to": req.return_to,
+        "redirect_uri": stepup_uri,
+    })
+    step_up_token = create_stepup_token(current_user.verify_user_id, req.return_to)
+    auth_url = _build_authorize_url(
+        state, nonce, code_challenge,
+        acr_values=_MFA_ACR,
+        login_hint=current_user.email,
+        redirect_uri=stepup_uri,
+    )
+    return {"authorization_url": auth_url, "step_up_token": step_up_token}
+
+
+class StepUpCallbackRequest(BaseModel):
+    code: str
+    state: str
+    step_up_token: str
+
+
+@router.post("/stepup/complete")
+async def stepup_complete(
+    req: StepUpCallbackRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Complete a step-up MFA challenge.
+    Validates the OIDC code+state, confirms the step-up token is valid,
+    then re-issues the session JWT with mfa_verified=True.
+    """
+    # Validate step-up token first (fast fail before hitting IBM Verify)
+    stepup_payload = decode_stepup_token(req.step_up_token)
+
+    pending = _state_pop(req.state)
+    if not pending or not pending.get("stepup"):
+        raise HTTPException(status_code=400, detail="Invalid or expired step-up state")
+    if time.time() > float(pending["expires"]):
+        raise HTTPException(status_code=400, detail="Step-up state expired")
+
+    try:
+        token_response = await verify_client.oidc_token_exchange(
+            code=req.code,
+            redirect_uri=str(pending.get("redirect_uri") or settings.oidc_redirect_uri),
+            code_verifier=str(pending["code_verifier"]),
+        )
+    except Exception as exc:
+        logger.error("Step-up token exchange failed: %s", str(exc), exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Step-up token exchange failed: {exc}")
+
+    id_token = token_response.get("id_token")
+    if not id_token:
+        raise HTTPException(status_code=502, detail="No ID token in step-up response")
+
+    try:
+        jwks = await verify_client.get_oidc_jwks()
+        claims = jose_jwt.decode(
+            id_token,
+            jwks,
+            algorithms=["RS256"],
+            audience=settings.verify_client_id,
+            issuer=settings.verify_oidc_issuer,
+            options={"verify_at_hash": False},
+        )
+    except JWTError as exc:
+        logger.error("Step-up ID token validation failed: %s", str(exc), exc_info=True)
+        raise HTTPException(status_code=401, detail=f"Step-up token validation failed: {exc}")
+
+    if claims.get("nonce") != pending["nonce"]:
+        raise HTTPException(status_code=401, detail="Nonce mismatch in step-up")
+
+    # Confirm the authenticated user matches the step-up token subject
+    if claims["sub"] != stepup_payload["sub"]:
+        raise HTTPException(status_code=403, detail="Step-up user mismatch")
+
+    result = await db.execute(select(User).where(User.verify_user_id == claims["sub"]))
+    user = result.scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    token = create_session_token(
+        user.verify_user_id, user.email, user.name, user.role, mfa_verified=True
+    )
+    return_to = stepup_payload.get("return_to", "/transfers")
+    return {
+        "token": token,
+        "mfa_verified": True,
+        "return_to": return_to,
+        "user": {"name": user.name, "email": user.email, "role": user.role},
     }
 
 

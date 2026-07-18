@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
 interface Account {
@@ -10,6 +12,8 @@ interface Account {
 }
 
 export default function TransferPage() {
+  const { mfaVerified } = useAuth()
+  const navigate = useNavigate()
   const [accounts, setAccounts] = useState<Account[]>([])
   const [fromId, setFromId] = useState('')
   const [toId, setToId] = useState('')
@@ -29,6 +33,12 @@ export default function TransferPage() {
     if (!fromId || !toId) { setError('Select both accounts'); return }
     if (fromId === toId) { setError('Source and destination must differ'); return }
     if (isNaN(amt) || amt <= 0) { setError('Enter a valid positive amount'); return }
+
+    // Step-up: if the current JWT was not issued with MFA, redirect to re-verify.
+    if (!mfaVerified) {
+      navigate('/stepup?return_to=/transfers')
+      return
+    }
 
     setLoading(true); setError(null); setSuccess(null)
     try {
@@ -56,6 +66,11 @@ export default function TransferPage() {
   return (
     <div>
       <h2 style={s.heading}>Transfer Funds</h2>
+      {!mfaVerified && (
+        <div style={s.mfaWarning}>
+          🔐 <strong>MFA required.</strong> You will be redirected to verify your identity before the transfer is processed.
+        </div>
+      )}
       <div style={s.card}>
         <p style={s.sub}>Move funds between your accounts instantly.</p>
 
@@ -107,6 +122,10 @@ export default function TransferPage() {
 
 const s: Record<string, React.CSSProperties> = {
   heading: { margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 700, color: '#1f2328' },
+  mfaWarning: {
+    background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px',
+    padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#92400e', marginBottom: '1rem',
+  },
   card: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '2rem', maxWidth: '480px' },
   sub: { color: '#57606a', fontSize: '0.875rem', marginBottom: '1.5rem', marginTop: 0 },
   group: { marginBottom: '1rem' },

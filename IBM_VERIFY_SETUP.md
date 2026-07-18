@@ -70,12 +70,16 @@ authorization code that the backend exchanges for an ID token on SSO login.
    - `Authorization code`
    - `Refresh token`
    - `Client credentials` _(needed for backend service-to-service IBM Verify API calls)_
-7. Under **Redirect URIs**, add both:
+7. Under **Redirect URIs**, add **all four** of the following:
    ```
    http://localhost:3000/callback
    https://<ngrok-domain>/callback
+   http://localhost:3000/stepup-callback
+   https://<ngrok-domain>/stepup-callback
    ```
    Replace `<ngrok-domain>` with your actual ngrok hostname (e.g. `abcd1234.ngrok-free.app`).
+   The `/stepup-callback` URI is used by the step-up MFA flow when a user attempts a sensitive
+   action (e.g. fund transfer) and needs to re-verify their identity mid-session.
 8. Click **Save**.
 
 ### Capturing Client ID and Client Secret

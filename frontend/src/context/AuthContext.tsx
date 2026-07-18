@@ -9,7 +9,8 @@ interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null
   token: string | null
-  login: (token: string, user: AuthUser) => void
+  mfaVerified: boolean
+  login: (token: string, user: AuthUser, mfaVerified?: boolean) => void
   logout: () => void
   isAuthenticated: boolean
 }
@@ -24,23 +25,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = sessionStorage.getItem('mb_user')
     return stored ? (JSON.parse(stored) as AuthUser) : null
   })
+  const [mfaVerified, setMfaVerified] = useState<boolean>(
+    () => sessionStorage.getItem('mb_mfa_verified') === 'true'
+  )
 
-  const login = (newToken: string, newUser: AuthUser) => {
+  const login = (newToken: string, newUser: AuthUser, newMfaVerified = false) => {
     sessionStorage.setItem('mb_token', newToken)
     sessionStorage.setItem('mb_user', JSON.stringify(newUser))
+    sessionStorage.setItem('mb_mfa_verified', String(newMfaVerified))
     setToken(newToken)
     setUser(newUser)
+    setMfaVerified(newMfaVerified)
   }
 
   const logout = () => {
     sessionStorage.removeItem('mb_token')
     sessionStorage.removeItem('mb_user')
+    sessionStorage.removeItem('mb_mfa_verified')
     setToken(null)
     setUser(null)
+    setMfaVerified(false)
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ user, token, mfaVerified, login, logout, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   )

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     verify_group_claim: str = "groups"
     frontend_base_url: str
     oidc_redirect_uri: str
+    # Step-up redirect URI — defaults to the same base as oidc_redirect_uri but at /stepup-callback.
+    # Add both /callback and /stepup-callback to your IBM Verify application's Redirect URIs list.
+    stepup_redirect_uri: Optional[str] = None
     post_logout_redirect_uri: str
     fido2_rp_id: str
     fido2_rp_origin: str

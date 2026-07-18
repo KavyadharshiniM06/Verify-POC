@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.jwt_handler import get_current_user
+from app.auth.jwt_handler import get_current_user, require_mfa
 from app.database import get_db
 from app.models import Account, Transaction, TransactionType, User
 from app.schemas import (
@@ -114,6 +114,7 @@ async def get_summary(
 async def transfer(
     req: TransferRequest,
     current_user: User = Depends(get_current_user),
+    _mfa: dict = Depends(require_mfa),
     db: AsyncSession = Depends(get_db),
 ):
     if req.amount <= 0:

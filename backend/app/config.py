@@ -36,6 +36,27 @@ class Settings(BaseSettings):
     verify_admin_username: Optional[str] = None
     verify_admin_password: Optional[str] = None
 
+    # ── Step-up authentication thresholds ────────────────────────────────
+    # ACR value sent to IBM Verify during step-up.
+    # Set this to the Policy ID / ACR value of your "second factor only" access policy.
+    # Find it in IBM Verify → Security → Access Policies → your policy → copy the ACR value.
+    stepup_acr: str = "urn:ibm:security:authentication:asf:any_secondfactor"
+
+    # Dollar amount above which a transfer requires a fresh step-up challenge.
+    # Set to 0 to require step-up for ALL transfers.
+    transfer_stepup_threshold: float = 50000.0
+
+    # How long (minutes) a step-up token remains valid after issue.
+    # After this window the user must re-verify even if their session is active.
+    stepup_duration_minutes: int = 10
+
+    # When True, every admin operation (create/update/disable/delete user) requires
+    # a valid step-up even if the admin already completed one earlier in the session.
+    admin_always_stepup: bool = True
+
+    # When True, deleting one's own account requires step-up.
+    delete_account_stepup: bool = True
+
     class Config:
         env_file = str(_ENV_FILE)
 

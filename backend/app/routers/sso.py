@@ -20,6 +20,7 @@ from app.auth.jwt_handler import (
     create_stepup_token,
     decode_stepup_token,
     get_current_user,
+    require_stepup,
 )
 from app.config import settings
 from app.database import get_db
@@ -82,6 +83,7 @@ def _build_authorize_url(
     state: str, nonce: str, code_challenge: str,
     acr_values: str = "", login_hint: str = "",
     redirect_uri: str = "",
+    force_reauth: bool = False,
 ) -> str:
     params: dict = {
         "response_type": "code",
@@ -93,8 +95,15 @@ def _build_authorize_url(
         "nonce": nonce,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
-        "prompt": "login",   # force re-authentication every time
     }
+    if force_reauth:
+        # max_age=0 tells IBM Verify the current authentication is considered
+        # expired and the user must re-authenticate.  IBM Verify will use the
+        # user's active session identity but force a fresh factor challenge —
+        # it picks the user's default/enrolled second factor without showing
+        # the first-factor (password/passkey selection) page again.
+        # Do NOT use prompt=login here — that triggers a full login from scratch.
+        params["max_age"] = "0"
     if acr_values:
         params["acr_values"] = acr_values
     if login_hint:
@@ -112,8 +121,10 @@ def _map_role(claims: dict) -> str:
     return max(matched_roles, key=lambda role: ROLE_PRIORITY[role])
 
 
-# IBM Verify ACR value — used only for the transfer step-up flow.
-_MFA_ACR = "urn:ibm:security:authentication:asf:basicauth_and_any_secondfactor"
+# ACR value for step-up — read from config so it can be changed via .env
+# without touching code. Set STEPUP_ACR in .env to match your IBM Verify
+# Access Policy ID exactly.
+_MFA_ACR = settings.stepup_acr
 
 
 @router.get("/login")
@@ -219,14 +230,15 @@ async def sso_callback(
     await db.commit()
     await db.refresh(user)
 
-    # IBM Verify Access Policy enforced MFA for the required groups before returning
-    # the authorisation code. We unconditionally trust the completed OIDC flow.
+    # The OIDC flow authenticates the user.  Step-up is separate and only
+    # required when the user later attempts a high-risk operation.
     token = create_session_token(
-        user.verify_user_id, user.email, user.name, user.role, mfa_verified=True
+        user.verify_user_id, user.email, user.name, user.role
     )
     return {
         "token": token,
-        "mfa_verified": True,
+        "authenticated": True,
+        "stepup_verified": False,
         "user": {
             "name": user.name,
             "email": user.email,
@@ -283,9 +295,15 @@ async def stepup_initiate(
     step_up_token = create_stepup_token(current_user.verify_user_id, req.return_to)
     auth_url = _build_authorize_url(
         state, nonce, code_challenge,
+        # Pass the configured ACR value so IBM Verify enforces the correct
+        # access policy (e.g. "Require 2FA each session").
+        # Set STEPUP_ACR in .env to the Policy ID shown on the Access Policies
+        # page in the IBM Verify admin console.
+        # If STEPUP_ACR is empty, max_age=0 alone is used (may silently pass).
         acr_values=_MFA_ACR,
         login_hint=current_user.email,
         redirect_uri=stepup_uri,
+        force_reauth=True,
     )
     return {"authorization_url": auth_url, "step_up_token": step_up_token}
 
@@ -304,7 +322,7 @@ async def stepup_complete(
     """
     Complete a step-up MFA challenge.
     Validates the OIDC code+state, confirms the step-up token is valid,
-    then re-issues the session JWT with mfa_verified=True.
+    then re-issues the session JWT with stepup_verified=True.
     """
     # Validate step-up token first (fast fail before hitting IBM Verify)
     stepup_payload = decode_stepup_token(req.step_up_token)
@@ -350,18 +368,57 @@ async def stepup_complete(
     if claims["sub"] != stepup_payload["sub"]:
         raise HTTPException(status_code=403, detail="Step-up user mismatch")
 
+    # ── Verify IBM Verify actually performed a fresh authentication ────────
+    # Log the key claims so we can inspect what IBM Verify returned.
+    auth_time = claims.get("auth_time")  # unix timestamp of actual auth event
+    amr = claims.get("amr", [])          # authentication methods used
+    acr = claims.get("acr", "")
+    logger.info(
+        "Step-up ID token claims — sub=%s auth_time=%s amr=%s acr=%s iat=%s",
+        claims.get("sub"), auth_time, amr, acr, claims.get("iat"),
+    )
+
+    # auth_time must be recent (within the last 60 seconds) to prove IBM Verify
+    # actually challenged the user right now rather than silently reusing the session.
+    if auth_time is not None:
+        age_seconds = time.time() - float(auth_time)
+        logger.info("Step-up auth_time age: %.1fs", age_seconds)
+        if age_seconds > 120:
+            logger.warning(
+                "Step-up rejected: auth_time is %ds old — IBM Verify silently "
+                "reused the existing session without challenging the user.",
+                int(age_seconds),
+            )
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "STEP_UP_REQUIRED",
+                    "message": (
+                        "IBM Verify did not perform a fresh MFA challenge. "
+                        "Please enroll a second factor in IBM Verify "
+                        "(Settings → Security → Two-step verification) "
+                        "and try again."
+                    ),
+                },
+            )
+    # ─────────────────────────────────────────────────────────────────────
+
     result = await db.execute(select(User).where(User.verify_user_id == claims["sub"]))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found")
 
+    # Issue a new session token with stepup_verified=True so the expiry
+    # window is anchored to this exact moment (stepup_time = now).
     token = create_session_token(
-        user.verify_user_id, user.email, user.name, user.role, mfa_verified=True
+        user.verify_user_id, user.email, user.name, user.role,
+        stepup_verified=True,
     )
     return_to = stepup_payload.get("return_to", "/transfers")
     return {
         "token": token,
-        "mfa_verified": True,
+        "authenticated": True,
+        "stepup_verified": True,
         "return_to": return_to,
         "user": {"name": user.name, "email": user.email, "role": user.role},
     }

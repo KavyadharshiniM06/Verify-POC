@@ -10,6 +10,10 @@ const NAV = [
   { to: '/profile', label: '👤 Profile' },
 ]
 
+const ADMIN_NAV = [
+  { to: '/admin', label: '⚙️ User Management' },
+]
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
 
@@ -34,6 +38,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               {label}
             </NavLink>
           ))}
+          {user?.role === 'Admin' && (
+            <>
+              <div style={s.navSection}>Admin</div>
+              {ADMIN_NAV.map(({ to, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  style={({ isActive }) => ({ ...s.navLink, ...(isActive ? s.navActive : {}) })}
+                >
+                  {label}
+                </NavLink>
+              ))}
+            </>
+          )}
         </nav>
         <div style={s.sidebarFooter}>
           <div style={s.sidebarUser}>{user?.email}</div>
@@ -89,6 +107,11 @@ const s: Record<string, React.CSSProperties> = {
     background: '#30363d',
     borderLeft: '3px solid #3b82d4',
     paddingLeft: 'calc(1.5rem - 3px)',
+  },
+  navSection: {
+    padding: '0.5rem 1.5rem 0.25rem',
+    fontSize: '0.65rem', fontWeight: 700, color: '#4b5563',
+    textTransform: 'uppercase' as const, letterSpacing: '0.08em',
   },
   sidebarFooter: { padding: '1rem 1.5rem', borderTop: '1px solid #30363d' },
   sidebarUser: { fontSize: '0.75rem', color: '#d1d5db', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },

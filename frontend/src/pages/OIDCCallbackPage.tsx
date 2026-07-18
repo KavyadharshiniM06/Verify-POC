@@ -41,8 +41,9 @@ export default function OIDCCallbackPage() {
 
       try {
         const { data } = await api.post('/auth/sso/callback', { code, state })
-        // IBM Verify Access Policy already enforced MFA for the required groups.
-        login(data.token, data.user, data.mfa_verified === true)
+        // IBM Verify handled the full authentication experience — registration,
+        // factor enrollment, and login are all managed on the Verify hosted pages.
+        login(data.token, data.user, false, null)
         navigate('/dashboard', { replace: true })
       } catch {
         setError('IBM Verify login failed. Please try again.')

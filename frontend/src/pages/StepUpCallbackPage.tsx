@@ -1,6 +1,6 @@
 /**
  * StepUpCallbackPage — receives the OIDC code+state after IBM Verify MFA challenge,
- * exchanges them for a fresh JWT with mfa_verified=true, then resumes the user's
+ * exchanges them for a fresh JWT with stepup_verified=true, then resumes the user's
  * original action.
  */
 import React, { useEffect, useRef, useState } from 'react'
@@ -55,10 +55,24 @@ export default function StepUpCallbackPage() {
         sessionStorage.removeItem('mb_stepup_token')
         sessionStorage.removeItem('mb_stepup_return_to')
 
-        login(data.token, data.user, true)
+        // Pass stepupVerified=true and the server-issued stepup_time so that
+        // AuthContext knows step-up is active and TransferPage can auto-retry.
+        login(data.token, data.user, true, data.stepup_time ?? null)
         navigate(data.return_to ?? returnTo, { replace: true })
-      } catch {
-        setError('MFA verification failed. Please try again.')
+      } catch (e: unknown) {
+        const err = e as { response?: { data?: { detail?: { code?: string; message?: string } | string } } }
+        const detail = err?.response?.data?.detail
+        if (detail && typeof detail === 'object' && detail.code === 'STEP_UP_REQUIRED') {
+          // IBM Verify silently reused the session — no real MFA was performed.
+          // The user needs to enroll a second factor.
+          setError(
+            detail.message ??
+            'IBM Verify did not challenge you for MFA — please enroll a second factor ' +
+            'in IBM Verify (Settings → Security → Two-step verification) then try again.'
+          )
+        } else {
+          setError('MFA verification failed. Please try again.')
+        }
       }
     }
 

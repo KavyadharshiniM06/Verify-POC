@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
-from app.auth.jwt_handler import get_current_user, require_mfa
+from app.auth.jwt_handler import get_current_user, require_stepup, _is_stepup_valid, decode_session_token
+from app.config import settings
 from app.database import get_db
 from app.models import Account, Transaction, TransactionType, User
 from app.schemas import (
@@ -15,8 +16,11 @@ from app.schemas import (
     TransferRequest,
     TransferResponse,
 )
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 router = APIRouter(prefix="/banking", tags=["banking"])
+
+_bearer = HTTPBearer()
 
 
 @router.get("/accounts", response_model=list[AccountResponse])
@@ -114,13 +118,40 @@ async def get_summary(
 async def transfer(
     req: TransferRequest,
     current_user: User = Depends(get_current_user),
-    _mfa: dict = Depends(require_mfa),
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Process a fund transfer between two of the authenticated user's accounts.
+
+    Threshold logic
+    ---------------
+    - Amount <= TRANSFER_STEPUP_THRESHOLD  → processed immediately (no step-up needed).
+    - Amount >  TRANSFER_STEPUP_THRESHOLD  → requires a valid, unexpired step-up in the JWT.
+      If the JWT has no valid step-up, returns HTTP 403 with a structured STEP_UP_REQUIRED
+      body so the frontend can store the pending transfer and initiate the step-up flow,
+      then automatically retry.
+    """
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be positive")
     if req.from_account_id == req.to_account_id:
         raise HTTPException(status_code=400, detail="Source and destination must differ")
+
+    # ── Step-up gate (only for high-value transfers) ──────────────────────
+    if req.amount > settings.transfer_stepup_threshold:
+        payload = decode_session_token(credentials.credentials)
+        if not _is_stepup_valid(payload):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "STEP_UP_REQUIRED",
+                    "step_up_reason": "HIGH_VALUE_TRANSFER",
+                    "message": (
+                        f"Transfers above ${settings.transfer_stepup_threshold:,.2f} "
+                        "require a fresh MFA verification."
+                    ),
+                },
+            )
 
     # Validate user owns the source account before any writes (parameterized ORM query)
     from_result = await db.execute(

@@ -9,8 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 
-STEPUP_TOKEN_EXPIRE_MINUTES = 10  # short-lived step-up token
-
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
@@ -22,17 +20,37 @@ def create_session_token(
     email: str,
     name: str,
     role: str,
-    mfa_verified: bool = False,
+    *,
+    stepup_verified: bool = False,
 ) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    """
+    Issue a signed session JWT.
+
+    Fields
+    ------
+    authenticated  — always True (a token only exists after successful login).
+    stepup_verified — True when the user has completed a step-up MFA challenge
+                      within the current stepup_duration_minutes window.
+    stepup_time    — UTC ISO-8601 timestamp of when step-up was completed,
+                     or None if no step-up has occurred.
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    stepup_time: str | None = None
+    if stepup_verified:
+        stepup_time = now.isoformat()
+
     payload = {
         "sub": verify_user_id,
         "email": email,
         "name": name,
         "role": role,
-        "mfa_verified": mfa_verified,
+        "authenticated": True,
+        "stepup_verified": stepup_verified,
+        "stepup_time": stepup_time,
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": now,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
 
@@ -60,26 +78,53 @@ async def get_current_user(
     return user
 
 
-def require_mfa(
+def _is_stepup_valid(payload: dict) -> bool:
+    """
+    Return True when the JWT carries a step-up that is still within the
+    configurable STEPUP_DURATION_MINUTES window.
+    """
+    if not payload.get("stepup_verified"):
+        return False
+    stepup_time_str: str | None = payload.get("stepup_time")
+    if not stepup_time_str:
+        return False
+    try:
+        stepup_time = datetime.fromisoformat(stepup_time_str)
+        # Ensure timezone-aware comparison
+        if stepup_time.tzinfo is None:
+            stepup_time = stepup_time.replace(tzinfo=timezone.utc)
+        window = timedelta(minutes=settings.stepup_duration_minutes)
+        return datetime.now(timezone.utc) - stepup_time <= window
+    except (ValueError, TypeError):
+        return False
+
+
+def require_stepup(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> dict:
     """
-    Dependency that ensures the current JWT was issued after a successful MFA challenge.
+    FastAPI dependency that requires a valid, unexpired step-up in the JWT.
     Returns the decoded payload on success.
-    Raises 403 with a machine-readable code so the frontend can trigger step-up auth.
+    Raises HTTP 403 with a machine-readable ``STEP_UP_REQUIRED`` code so the
+    frontend knows to initiate the step-up flow rather than show a generic error.
     """
     payload = decode_session_token(credentials.credentials)
-    if not payload.get("mfa_verified"):
+    if not _is_stepup_valid(payload):
         raise HTTPException(
             status_code=403,
-            detail={"code": "MFA_REQUIRED", "message": "This action requires MFA verification."},
+            detail={
+                "code": "STEP_UP_REQUIRED",
+                "message": "This action requires a fresh MFA verification.",
+            },
         )
     return payload
 
 
+# ── Step-up short-lived token ─────────────────────────────────────────────────
+
 def create_stepup_token(verify_user_id: str, return_to: str = "/transfers") -> str:
     """Short-lived token encoding the user id and where to redirect after step-up."""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=STEPUP_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=10)
     payload = {
         "sub": verify_user_id,
         "purpose": "stepup",

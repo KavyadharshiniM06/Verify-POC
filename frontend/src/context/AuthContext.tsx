@@ -9,8 +9,11 @@ interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null
   token: string | null
-  mfaVerified: boolean
-  login: (token: string, user: AuthUser, mfaVerified?: boolean) => void
+  /** True when the current JWT contains a non-expired step-up verification. */
+  stepupVerified: boolean
+  /** ISO-8601 timestamp of when step-up was last completed, or null. */
+  stepupTime: string | null
+  login: (token: string, user: AuthUser, stepupVerified?: boolean, stepupTime?: string | null) => void
   logout: () => void
   isAuthenticated: boolean
 }
@@ -25,30 +28,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = sessionStorage.getItem('mb_user')
     return stored ? (JSON.parse(stored) as AuthUser) : null
   })
-  const [mfaVerified, setMfaVerified] = useState<boolean>(
-    () => sessionStorage.getItem('mb_mfa_verified') === 'true'
+  const [stepupVerified, setStepupVerified] = useState<boolean>(
+    () => sessionStorage.getItem('mb_stepup_verified') === 'true'
+  )
+  const [stepupTime, setStepupTime] = useState<string | null>(
+    () => sessionStorage.getItem('mb_stepup_time')
   )
 
-  const login = (newToken: string, newUser: AuthUser, newMfaVerified = false) => {
+  const login = (
+    newToken: string,
+    newUser: AuthUser,
+    newStepupVerified = false,
+    newStepupTime: string | null = null,
+  ) => {
     sessionStorage.setItem('mb_token', newToken)
     sessionStorage.setItem('mb_user', JSON.stringify(newUser))
-    sessionStorage.setItem('mb_mfa_verified', String(newMfaVerified))
+    sessionStorage.setItem('mb_stepup_verified', String(newStepupVerified))
+    if (newStepupTime) {
+      sessionStorage.setItem('mb_stepup_time', newStepupTime)
+    } else {
+      sessionStorage.removeItem('mb_stepup_time')
+    }
     setToken(newToken)
     setUser(newUser)
-    setMfaVerified(newMfaVerified)
+    setStepupVerified(newStepupVerified)
+    setStepupTime(newStepupTime)
   }
 
   const logout = () => {
     sessionStorage.removeItem('mb_token')
     sessionStorage.removeItem('mb_user')
-    sessionStorage.removeItem('mb_mfa_verified')
+    sessionStorage.removeItem('mb_stepup_verified')
+    sessionStorage.removeItem('mb_stepup_time')
     setToken(null)
     setUser(null)
-    setMfaVerified(false)
+    setStepupVerified(false)
+    setStepupTime(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, mfaVerified, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        stepupVerified,
+        stepupTime,
+        login,
+        logout,
+        isAuthenticated: !!token,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

@@ -115,7 +115,8 @@ class VerifyClient:
     # ── FIDO2/WebAuthn ────────────────────────────────────────────────────
 
     async def fido2_register_begin(self, user_id: str, username: str, display_name: str) -> dict:
-        headers = await self._admin_headers()
+        # client_credentials token — ROPC is blocked by adaptive access
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/attestation/options"
         body = {
             "userId": user_id,
@@ -127,7 +128,7 @@ class VerifyClient:
         return resp.json()
 
     async def fido2_register_complete(self, user_id: str, attestation_response: dict) -> dict:
-        headers = await self._admin_headers()
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/attestation/result"
         body = {"userId": user_id, **attestation_response}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -135,7 +136,7 @@ class VerifyClient:
         return resp.json()
 
     async def fido2_login_begin(self, user_id: str) -> dict:
-        headers = await self._admin_headers()
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/assertion/options"
         body = {"userId": user_id}
         resp = await self._client.post(url, json=body, headers=headers)
@@ -143,7 +144,7 @@ class VerifyClient:
         return resp.json()
 
     async def fido2_login_complete(self, assertion_response: dict) -> dict:
-        headers = await self._admin_headers()
+        headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties/{settings.fido2_rp_id}/assertion/result"
         resp = await self._client.post(url, json=assertion_response, headers=headers)
         resp.raise_for_status()
@@ -218,13 +219,63 @@ class VerifyClient:
         resp = await self._client.delete(url, headers=headers)
         resp.raise_for_status()
 
+    async def unenroll_factor(self, verify_user_id: str, factor_type: str) -> None:
+        """
+        Delete all registrations of a given factor type for a user from IBM Verify.
+        factor_type is one of: fido2, totp, push, email_otp
+        Uses client_credentials token — ROPC is blocked by adaptive access.
+        """
+        headers = await self._headers()
+
+        if factor_type == "fido2":
+            url = (
+                f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties"
+                f"/{settings.fido2_rp_id}/registrations"
+            )
+            r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
+            if r.is_success:
+                for reg in r.json().get("fido2", r.json().get("registrations", [])):
+                    rid = reg.get("id")
+                    if rid:
+                        await self._client.delete(f"{url}/{rid}", headers=headers)
+
+        elif factor_type == "totp":
+            url = f"{settings.verify_tenant_url}/v2.0/factors/totp/registrations"
+            r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
+            if r.is_success:
+                regs = r.json().get("totpRegistrations", r.json().get("registrations", []))
+                for reg in regs:
+                    rid = reg.get("id")
+                    if rid:
+                        await self._client.delete(f"{url}/{rid}", headers=headers)
+
+        elif factor_type == "push":
+            url = f"{settings.verify_tenant_url}/v2.0/factors/push/registrations"
+            r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
+            if r.is_success:
+                regs = r.json().get("pushRegistrations", r.json().get("registrations", []))
+                for reg in regs:
+                    rid = reg.get("id")
+                    if rid:
+                        await self._client.delete(f"{url}/{rid}", headers=headers)
+
+        elif factor_type == "email_otp":
+            url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
+            r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
+            if r.is_success:
+                for reg in r.json().get("emailotp", []):
+                    rid = reg.get("id")
+                    if rid:
+                        await self._client.delete(f"{url}/{rid}", headers=headers)
+
     async def get_enrolled_factors(self, verify_user_id: str) -> dict:
         """
         Return the authentication factors enrolled by a user from IBM Verify.
         Queries FIDO2, TOTP, and push registrations for the given user.
         Returns a dict with keys: fido2, totp, push — each True/False.
+        Uses client_credentials token — ROPC is blocked by adaptive access.
         """
-        headers = await self._admin_headers()
+        headers = await self._headers()
         results = {"fido2": False, "totp": False, "push": False}
 
         try:
@@ -275,11 +326,30 @@ class VerifyClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def totp_challenge(self, user_id: str) -> dict:
+        """
+        Initiate a TOTP verification challenge for an already-enrolled user.
+        Returns a transaction_id the user completes by supplying their OTP code.
+        Uses the same verifications endpoint as enroll — IBM Verify returns a
+        transaction the client verifies with the current 6-digit code.
+        """
+        headers = await self._headers()
+        url = f"{settings.verify_tenant_url}/v2.0/factors/totp/verifications"
+        body = {"userId": user_id}
+        resp = await self._client.post(url, json=body, headers=headers)
+        if not resp.is_success:
+            logger.error("TOTP challenge error %s: %s", resp.status_code, resp.text)
+        resp.raise_for_status()
+        return resp.json()
+
     async def totp_verify(self, transaction_id: str, otp_code: str) -> dict:
+        """Verify TOTP code. IBM Verify uses POST /v2.0/factors/totp/verifications/{id}."""
         headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/totp/verifications/{transaction_id}"
         body = {"otp": otp_code}
         resp = await self._client.post(url, json=body, headers=headers)
+        if not resp.is_success:
+            logger.error("TOTP verify error %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.json()
 
@@ -308,56 +378,109 @@ class VerifyClient:
         return resp.json()
 
     # ── Email OTP ─────────────────────────────────────────────────────────
+    #
+    # IBM Verify email OTP flow (Cloud Directory):
+    #
+    #   1. GET  /v2.0/factors/emailotp?search=userId={id}
+    #         → returns list; pick the first enabled enrollment's `id`
+    #         → if none exists, POST /v2.0/factors/emailotp to create one
+    #
+    #   2. POST /v2.0/factors/emailotp/{enrollmentId}/verifications
+    #         → triggers OTP delivery; returns { id (transactionId), ... }
+    #
+    #   3. PUT  /v2.0/factors/emailotp/verifications/{transactionId}
+    #         → body: { otp: "123456" } — verifies the code
+
+    async def _email_otp_get_or_create_enrollment(self, user_id: str, email: str) -> str:
+        """
+        Return the enrollmentId for the user's email OTP factor.
+        Creates one if none exists, using client_credentials token.
+        """
+        headers = await self._headers()
+        list_url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
+
+        # 1. Check for existing enrollment
+        resp = await self._client.get(
+            list_url,
+            params={"search": f"userId={user_id}"},
+            headers=headers,
+        )
+        if resp.is_success:
+            enrollments = resp.json().get("emailotp", [])
+            enabled = [e for e in enrollments if e.get("enabled") or e.get("validated")]
+            if enabled:
+                return str(enabled[0]["id"])
+            # If any enrollment exists (even disabled) use its id rather than creating a new one
+            if enrollments:
+                return str(enrollments[0]["id"])
+
+        # 2. Create enrollment
+        logger.debug("Creating email OTP enrollment for user %s", user_id)
+        create_resp = await self._client.post(
+            list_url,
+            json={"userId": user_id, "emailAddress": email},
+            headers=headers,
+        )
+        if not create_resp.is_success:
+            logger.error(
+                "Email OTP enrollment create %s: %s",
+                create_resp.status_code,
+                create_resp.text,
+            )
+        create_resp.raise_for_status()
+        enrollment = create_resp.json()
+        eid = str(enrollment["id"])
+
+        # Enable/validate the enrollment so it can receive codes
+        await self._client.put(
+            f"{list_url}/{eid}",
+            json={**enrollment, "enabled": True, "validated": True},
+            headers=headers,
+        )
+        return eid
 
     async def email_otp_enroll(self, user_id: str, email: str) -> dict:
-        """Create an Email OTP enrollment for a user (if not already enrolled)."""
+        """Public alias — returns the enrollment record (id, emailAddress, …)."""
         headers = await self._headers()
-        # Check existing enrollments first
-        url_list = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
-        resp = await self._client.get(url_list, params={"userId": user_id}, headers=headers)
-        if resp.is_success:
-            existing = resp.json().get("emailotp", [])
-            enabled = [e for e in existing if e.get("enabled")]
-            if enabled:
-                return enabled[0]  # Already enrolled
-        # Create new enrollment
-        url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
-        body = {"userId": user_id, "emailAddress": email}
-        resp = await self._client.post(url, json=body, headers=headers)
-        if resp.is_success:
-            enrollment = resp.json()
-            # Enable it
-            eid = enrollment.get("id")
-            if eid:
-                await self._client.put(
-                    f"{settings.verify_tenant_url}/v2.0/factors/emailotp/{eid}",
-                    json={**enrollment, "enabled": True, "validated": True},
-                    headers=headers,
-                )
-        if not resp.is_success:
-            logger.error("Email OTP enroll error %s: %s", resp.status_code, resp.text)
+        eid = await self._email_otp_get_or_create_enrollment(user_id, email)
+        resp = await self._client.get(
+            f"{settings.verify_tenant_url}/v2.0/factors/emailotp/{eid}",
+            headers=headers,
+        )
         resp.raise_for_status()
         return resp.json()
 
     async def email_otp_send(self, user_id: str, email: str) -> dict:
-        """Send OTP to user's enrolled email. Enrolls first if needed."""
+        """
+        Send an OTP to the user's registered email address.
+
+        IBM Verify endpoint:
+          POST /v2.0/factors/emailotp/{enrollmentId}/verifications
+        Returns a transaction object whose `id` is used in email_otp_verify.
+        """
         headers = await self._headers()
-        # Ensure enrollment exists and is enabled
-        await self.email_otp_enroll(user_id, email)
-        # Send OTP via PUT
-        url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications"
-        body = {"userId": user_id}
-        resp = await self._client.put(url, json=body, headers=headers)
+        eid = await self._email_otp_get_or_create_enrollment(user_id, email)
+        url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/{eid}/verifications"
+        resp = await self._client.post(url, json={}, headers=headers)
         if not resp.is_success:
             logger.error("Email OTP send error %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.json()
 
     async def email_otp_verify(self, transaction_id: str, otp_code: str) -> dict:
+        """
+        Verify the OTP code the user received by email.
+
+        IBM Verify endpoint:
+          PUT /v2.0/factors/emailotp/verifications/{transactionId}
+        Body: { "otp": "<code>" }
+        """
         headers = await self._headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications/{transaction_id}"
         body = {"otp": otp_code}
         resp = await self._client.put(url, json=body, headers=headers)
+        if not resp.is_success:
+            logger.error("Email OTP verify error %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return resp.json()
 

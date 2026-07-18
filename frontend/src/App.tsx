@@ -17,6 +17,8 @@ import TransferPage from './pages/TransferPage'
 import ProfilePage from './pages/ProfilePage'
 import StepUpPage from './pages/StepUpPage'
 import StepUpCallbackPage from './pages/StepUpCallbackPage'
+import EnrollMethodPage from './pages/EnrollMethodPage'
+import AdminPage from './pages/AdminPage'
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -41,6 +43,8 @@ export default function App() {
           <Route path="/auth/email-otp" element={<EmailOTPPage />} />
           <Route path="/stepup" element={<StepUpPage />} />
           <Route path="/stepup-callback" element={<StepUpCallbackPage />} />
+          {/* Enrollment wizard — requires a valid session but no Layout wrapper */}
+          <Route path="/enroll" element={<RequireAuth><EnrollMethodPage /></RequireAuth>} />
 
           {/* ── Protected / Banking routes ───────────────────────── */}
           <Route
@@ -58,6 +62,10 @@ export default function App() {
           <Route
             path="/profile"
             element={<ProtectedLayout><ProfilePage /></ProtectedLayout>}
+          />
+          <Route
+            path="/admin"
+            element={<ProtectedLayout><AdminPage /></ProtectedLayout>}
           />
         </Routes>
       </BrowserRouter>

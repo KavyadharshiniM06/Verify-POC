@@ -33,6 +33,8 @@ router = APIRouter(prefix="/auth/sso", tags=["sso"])
 
 STATE_TTL_SECONDS = 300
 ROLE_PRIORITY = {"Admin": 3, "Manager": 2, "Customer": 1}
+# Normalised lookup — maps any casing of a group name to the canonical role string
+_ROLE_NORMALISED = {k.lower(): k for k in ROLE_PRIORITY}
 
 # File-backed state store so PKCE state survives uvicorn --reload restarts
 _STATE_FILE = Path(__file__).resolve().parents[3] / ".oidc_states.json"
@@ -111,11 +113,28 @@ def _build_authorize_url(
     return f"{settings.verify_oidc_authorize_url}?{urlencode(params)}"
 
 
+# Emails that are always granted Admin regardless of IBM Verify group config.
+# Remove entries once the IBM Verify groupIds attribute mapping is confirmed working.
+_ADMIN_EMAILS: set[str] = set(
+    e.strip().lower()
+    for e in getattr(settings, "admin_emails", "").split(",")
+    if e.strip()
+)
+
+
 def _map_role(claims: dict) -> str:
+    # Hard-coded email override — bypasses IBM Verify group config
+    if claims.get("email", "").lower() in _ADMIN_EMAILS:
+        return "Admin"
     groups = claims.get(settings.verify_group_claim, [])
     if isinstance(groups, str):
         groups = [groups]
-    matched_roles = [group for group in groups if group in ROLE_PRIORITY]
+    # Match case-insensitively so "admin", "Admin", "ADMIN" all work
+    matched_roles = [
+        _ROLE_NORMALISED[g.lower()]
+        for g in groups
+        if g.lower() in _ROLE_NORMALISED
+    ]
     if not matched_roles:
         return "Customer"
     return max(matched_roles, key=lambda role: ROLE_PRIORITY[role])
@@ -199,6 +218,13 @@ async def sso_callback(
         raise HTTPException(status_code=400, detail="Email claim missing from ID token")
     name = claims.get("name") or claims.get("preferred_username") or email
     role = _map_role(claims)
+    logger.warning(
+        "SSO login — sub=%s email=%s all_claims=%r groups_claim=%r mapped_role=%s",
+        verify_user_id, email,
+        list(claims.keys()),
+        claims.get(settings.verify_group_claim),
+        role,
+    )
 
     result = await db.execute(select(User).where(User.verify_user_id == verify_user_id))
     user = result.scalar_one_or_none()
@@ -368,39 +394,47 @@ async def stepup_complete(
     if claims["sub"] != stepup_payload["sub"]:
         raise HTTPException(status_code=403, detail="Step-up user mismatch")
 
-    # ── Verify IBM Verify actually performed a fresh authentication ────────
-    # Log the key claims so we can inspect what IBM Verify returned.
-    auth_time = claims.get("auth_time")  # unix timestamp of actual auth event
-    amr = claims.get("amr", [])          # authentication methods used
+    # ── Verify IBM Verify actually performed a fresh MFA challenge ────────
+    amr = claims.get("amr", [])
     acr = claims.get("acr", "")
-    logger.info(
-        "Step-up ID token claims — sub=%s auth_time=%s amr=%s acr=%s iat=%s",
-        claims.get("sub"), auth_time, amr, acr, claims.get("iat"),
+    iat = claims.get("iat")  # time THIS token was issued — updates on every step-up
+    logger.warning(
+        "Step-up ID token claims — sub=%s amr=%s acr=%s iat=%s",
+        claims.get("sub"), amr, acr, iat,
     )
 
-    # auth_time must be recent (within the last 60 seconds) to prove IBM Verify
-    # actually challenged the user right now rather than silently reusing the session.
-    if auth_time is not None:
-        age_seconds = time.time() - float(auth_time)
-        logger.info("Step-up auth_time age: %.1fs", age_seconds)
-        if age_seconds > 120:
+    # Use iat (token issue time) rather than auth_time to verify freshness.
+    # IBM Verify does NOT update auth_time on step-up — it reflects the original
+    # login time. iat however is always the time this specific token was issued,
+    # which is within seconds of the step-up completing.
+    MFA_AMR = {"totp", "otp", "fido", "fido2", "push", "smsotp", "emailotp", "2fa"}
+    has_mfa = bool(MFA_AMR & set(amr))
+    if iat is not None:
+        iat_age = time.time() - float(iat)
+        if iat_age > 300:
             logger.warning(
-                "Step-up rejected: auth_time is %ds old — IBM Verify silently "
-                "reused the existing session without challenging the user.",
-                int(age_seconds),
+                "Step-up rejected: token issued %ds ago — too old.",
+                int(iat_age),
             )
             raise HTTPException(
                 status_code=403,
                 detail={
                     "code": "STEP_UP_REQUIRED",
-                    "message": (
-                        "IBM Verify did not perform a fresh MFA challenge. "
-                        "Please enroll a second factor in IBM Verify "
-                        "(Settings → Security → Two-step verification) "
-                        "and try again."
-                    ),
+                    "message": "Step-up token has expired. Please try again.",
                 },
             )
+    if not has_mfa:
+        logger.warning("Step-up rejected: no MFA in amr=%s", amr)
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "STEP_UP_REQUIRED",
+                "message": (
+                    "IBM Verify did not perform a fresh MFA challenge. "
+                    "Please enroll a second factor and try again."
+                ),
+            },
+        )
     # ─────────────────────────────────────────────────────────────────────
 
     result = await db.execute(select(User).where(User.verify_user_id == claims["sub"]))

@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Admin credentials for ROPC token (factor API calls)
     verify_admin_username: Optional[str] = None
     verify_admin_password: Optional[str] = None
+    # Comma-separated emails that are always granted Admin role at login.
+    # Used when IBM Verify group membership is not included in the ID token.
+    admin_emails: str = ""
 
     # ── Step-up authentication thresholds ────────────────────────────────
     # ACR value sent to IBM Verify during step-up.

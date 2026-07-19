@@ -4,6 +4,7 @@ Handles token acquisition (client_credentials) and IBM Verify API calls.
 Access tokens are never logged.
 """
 import base64
+import json as _json
 import logging
 from typing import Any, Optional
 
@@ -110,6 +111,7 @@ class VerifyClient:
     async def _user_headers(self) -> dict[str, str]:
         headers = await self._headers()
         headers["Content-Type"] = "application/scim+json"
+        headers["Accept"] = "application/scim+json"
         return headers
 
     # ── FIDO2/WebAuthn ────────────────────────────────────────────────────
@@ -165,6 +167,19 @@ class VerifyClient:
         resources = resp.json().get("Resources", [])
         return resources[0] if resources else None
 
+    async def list_users(self, search: str = "", start_index: int = 1, count: int = 20) -> dict:
+        headers = await self._user_headers()
+        url = f"{settings.verify_tenant_url}/v2.0/Users"
+        params = {
+            "startIndex": start_index,
+            "count": count,
+        }
+        if search.strip():
+            params["filter"] = f'userName co "{search.strip()}" or name.formatted co "{search.strip()}"'
+        resp = await self._client.get(url, params=params, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
     async def create_user(self, email: str, name: str, role: str, active: bool = True) -> dict:
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users"
@@ -175,41 +190,79 @@ class VerifyClient:
             ],
             "userName": email,
             "name": {"formatted": name},
-            "emails": [{"value": email, "primary": True}],
+            "emails": [{"value": email, "type": "work", "primary": True}],
             "active": active,
-            # IBM Verify SCIM extension for group/role membership
-            "urn:ietf:params:scim:schemas:extension:ibm:2.0:User": {
-                "groups": [{"value": role, "type": "direct"}],
-            },
         }
-        resp = await self._client.post(url, json=body, headers=headers)
+        resp = await self._client.post(url, content=_json.dumps(body), headers=headers)
+        logger.warning("create_user response: %s %s", resp.status_code, resp.text[:300])
         resp.raise_for_status()
         return resp.json()
 
     async def update_user(self, verify_user_id: str, email: str, name: str, role: str) -> dict:
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users/{verify_user_id}"
+
+        # Fetch current record to check userCategory and preserve userName
+        get_resp = await self._client.get(url, headers=headers)
+        get_resp.raise_for_status()
+        current = get_resp.json()
+        username = current.get("userName", email)
+        ext = current.get("urn:ietf:params:scim:schemas:extension:ibm:2.0:User", {})
+        is_federated = ext.get("userCategory", "regular") == "federated"
+
+        if is_federated:
+            # Federated users: IBM Verify only allows userName + active to be changed.
+            # name/email are owned by the identity provider — skip the PUT entirely.
+            logger.warning(
+                "update_user: skipping IBM Verify PUT for federated user %s — "
+                "name/email are managed by the identity provider",
+                verify_user_id,
+            )
+            return current
+
+        operations = []
+        if current.get("name", {}).get("formatted") != name:
+            operations.append({"op": "replace", "path": "name.formatted", "value": name})
+
+        current_email = next(
+            (
+                item.get("value", "")
+                for item in current.get("emails", [])
+                if item.get("value")
+            ),
+            "",
+        )
+        if current_email != email:
+            operations.append(
+                {
+                    "op": "replace",
+                    "path": "emails",
+                    "value": [{"value": email, "type": "work", "primary": True}],
+                }
+            )
+
+        if not operations:
+            return current
+
         body = {
-            "schemas": [
-                "urn:ietf:params:scim:schemas:core:2.0:User",
-                "urn:ietf:params:scim:schemas:extension:ibm:2.0:User",
-            ],
-            "userName": email,
-            "name": {"formatted": name},
-            "emails": [{"value": email, "primary": True}],
-            "urn:ietf:params:scim:schemas:extension:ibm:2.0:User": {
-                "groups": [{"value": role, "type": "direct"}],
-            },
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": operations,
         }
-        resp = await self._client.put(url, json=body, headers=headers)
+        patch_headers = dict(headers)
+        patch_headers["Content-Type"] = "application/json"
+        resp = await self._client.patch(url, content=_json.dumps(body), headers=patch_headers)
+        logger.warning("update_user response: %s %s", resp.status_code, resp.text[:200])
         resp.raise_for_status()
-        return resp.json()
+        refreshed = await self._client.get(url, headers=headers)
+        refreshed.raise_for_status()
+        return refreshed.json()
 
     async def set_user_active(self, verify_user_id: str, active: bool) -> dict:
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users/{verify_user_id}"
         body = {"active": active}
-        resp = await self._client.patch(url, json=body, headers=headers)
+        # PATCH also needs scim+json to avoid 406
+        resp = await self._client.patch(url, content=_json.dumps(body), headers=headers)
         resp.raise_for_status()
         return resp.json() if resp.content else {"id": verify_user_id, "active": active}
 

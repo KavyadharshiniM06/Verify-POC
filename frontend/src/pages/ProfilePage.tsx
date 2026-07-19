@@ -28,7 +28,7 @@ type PendingAction =
 const PENDING_ACTION_KEY = 'mb_pending_profile_action'
 
 export default function ProfilePage() {
-  const { user, stepupVerified, logout } = useAuth()
+  const { user, token, stepupVerified, login, logout } = useAuth()
   const navigate = useNavigate()
   const initial = user?.name?.charAt(0)?.toUpperCase() ?? '?'
 
@@ -36,6 +36,32 @@ export default function ProfilePage() {
   const [loadingFactors, setLoadingFactors] = useState(true)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
+
+  // ── Inline profile edit ──────────────────────────────────────────────────
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState(user?.name ?? '')
+  const [editEmail, setEditEmail] = useState(user?.email ?? '')
+  const [editSaving, setEditSaving] = useState(false)
+
+  async function handleSaveProfile() {
+    setEditSaving(true)
+    setActionError(null)
+    setActionMsg(null)
+    try {
+      const { data } = await api.put<MeResponse>('/users/me', {
+        name: editName || undefined,
+        email: editEmail || undefined,
+      })
+      // Refresh in-session user so nav/header reflects new name immediately
+      login(token!, { name: data.name, email: data.email, role: data.role })
+      setIsEditing(false)
+      setActionMsg('Profile updated successfully.')
+    } catch {
+      setActionError('Failed to save profile. Please try again.')
+    } finally {
+      setEditSaving(false)
+    }
+  }
 
   // ── Fetch live enrollment status ────────────────────────────────────────
   const loadFactors = () => {
@@ -198,13 +224,54 @@ export default function ProfilePage() {
       {/* User card */}
       <div style={s.userCard}>
         <div style={s.avatar}>{initial}</div>
-        <div>
-          <div style={s.name}>{user?.name}</div>
-          <div style={s.email}>{user?.email}</div>
-          <div style={{ ...s.email, marginTop: '0.2rem' }}>
-            <span style={s.roleBadge}>{user?.role}</span>
+        {!isEditing ? (
+          <div style={{ flex: 1 }}>
+            <div style={s.name}>{user?.name}</div>
+            <div style={s.email}>{user?.email}</div>
+            <div style={{ ...s.email, marginTop: '0.2rem' }}>
+              <span style={s.roleBadge}>{user?.role}</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <input
+              style={s.editInput}
+              value={editName}
+              placeholder="Full name"
+              onChange={e => setEditName(e.target.value)}
+            />
+            <input
+              style={s.editInput}
+              type="email"
+              value={editEmail}
+              placeholder="Email address"
+              onChange={e => setEditEmail(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
+              <button style={s.saveBtn} onClick={handleSaveProfile} disabled={editSaving}>
+                {editSaving ? 'Saving…' : 'Save'}
+              </button>
+              <button style={s.cancelEditBtn} onClick={() => {
+                setIsEditing(false)
+                setEditName(user?.name ?? '')
+                setEditEmail(user?.email ?? '')
+              }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {!isEditing && (
+          <button style={s.actionBtn} onClick={() => {
+            setIsEditing(true)
+            setEditName(user?.name ?? '')
+            setEditEmail(user?.email ?? '')
+            setActionMsg(null)
+            setActionError(null)
+          }}>
+            Edit Profile
+          </button>
+        )}
       </div>
 
       {/* Feedback banner */}
@@ -352,5 +419,17 @@ const s: Record<string, React.CSSProperties> = {
     padding: '0.5rem 1.2rem', background: '#dc2626', color: '#fff',
     border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600,
     fontSize: '0.85rem', whiteSpace: 'nowrap' as const, flexShrink: 0,
+  },
+  editInput: {
+    padding: '0.35rem 0.6rem', border: '1px solid #d1d5db', borderRadius: '6px',
+    fontSize: '0.875rem', color: '#1f2328', outline: 'none', width: '100%', maxWidth: '280px',
+  },
+  saveBtn: {
+    padding: '0.35rem 0.75rem', background: '#3b82d4', color: '#fff',
+    border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
+  },
+  cancelEditBtn: {
+    padding: '0.35rem 0.75rem', background: '#f7f8fa', border: '1px solid #e5e7eb',
+    borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', color: '#57606a',
   },
 }

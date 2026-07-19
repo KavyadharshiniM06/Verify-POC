@@ -1,6 +1,8 @@
+import httpx
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Literal
 
@@ -17,6 +19,11 @@ ALLOWED_ROLES = {"Admin", "Manager", "Customer"}
 
 
 # ── Self-service: current user ────────────────────────────────────────────────
+
+class SelfUpdateRequest(BaseModel):
+    name: str | None = None
+    email: EmailStr | None = None
+
 
 @router.get("/me")
 async def get_me(current_user: User = Depends(get_current_user)):
@@ -46,6 +53,48 @@ async def get_me(current_user: User = Depends(get_current_user)):
     }
 
 
+@router.put("/me")
+async def update_me(
+    req: SelfUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow the authenticated user to update their own name and/or email."""
+    if not req.name and not req.email:
+        raise HTTPException(status_code=400, detail="At least one of name or email must be provided")
+
+    new_name = req.name or current_user.name
+    new_email = str(req.email) if req.email else current_user.email
+
+    await verify_client.update_user(
+        current_user.verify_user_id, new_email, new_name, current_user.role
+    )
+
+    current_user.name = new_name
+    current_user.email = new_email
+    await db.commit()
+
+    return {
+        "id": current_user.verify_user_id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "role": current_user.role,
+        "is_active": current_user.is_active,
+    }
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete the current user's account from IBM Verify and the local DB."""
+    await verify_client.delete_user(current_user.verify_user_id)
+    await db.execute(delete(User).where(User.verify_user_id == current_user.verify_user_id))
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # ── Admin: list users (paginated + searchable) ────────────────────────────────
 
 @router.get("")
@@ -54,45 +103,38 @@ async def list_users(
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ):
     """
-    Return a paginated list of all users.
-    Optional ?search= filters by name or email (case-insensitive substring).
+    Return a paginated list of IBM Verify users.
+    Optional ?search= filters by name or email.
     Requires Admin role.
     """
     _require_admin(current_user)
 
-    base = select(User)
-    count_q = select(func.count()).select_from(User)
-
-    if search.strip():
-        pattern = f"%{search.strip()}%"
-        filt = or_(User.name.ilike(pattern), User.email.ilike(pattern))
-        base = base.where(filt)
-        count_q = count_q.where(filt)
-
-    total_result = await db.execute(count_q)
-    total: int = total_result.scalar_one()
-
-    rows_result = await db.execute(
-        base.order_by(User.name).offset((page - 1) * page_size).limit(page_size)
-    )
-    users = rows_result.scalars().all()
+    start_index = (page - 1) * page_size + 1
+    result = await verify_client.list_users(search=search, start_index=start_index, count=page_size)
+    resources = result.get("Resources", [])
 
     return {
-        "total": total,
+        "total": result.get("totalResults", 0),
         "page": page,
         "page_size": page_size,
         "users": [
             {
-                "id": u.verify_user_id,
-                "email": u.email,
-                "name": u.name,
-                "role": u.role,
-                "is_active": u.is_active,
+                "id": user.get("id", ""),
+                "email": next(
+                    (
+                        email.get("value", "")
+                        for email in user.get("emails", [])
+                        if email.get("value")
+                    ),
+                    user.get("userName", ""),
+                ),
+                "name": user.get("name", {}).get("formatted") or user.get("userName", ""),
+                "role": "Admin" if current_user.verify_user_id == user.get("id") and current_user.role == "Admin" else "Customer",
+                "is_active": user.get("active", True),
             }
-            for u in users
+            for user in resources
         ],
     }
 
@@ -157,8 +199,12 @@ async def update_managed_user(
     if req.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail=f"Role must be one of: {ALLOWED_ROLES}")
 
-    await verify_client.update_user(verify_user_id, req.email, req.name, req.role)
-    await verify_client.set_user_active(verify_user_id, req.is_active)
+    try:
+        await verify_client.update_user(verify_user_id, req.email, req.name, req.role)
+        await verify_client.set_user_active(verify_user_id, req.is_active)
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:500] if exc.response is not None else "IBM Verify update failed"
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
 
     result = await db.execute(select(User).where(User.verify_user_id == verify_user_id))
     user = result.scalar_one_or_none()

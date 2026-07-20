@@ -41,8 +41,12 @@ export default function OIDCCallbackPage() {
 
       try {
         const { data } = await api.post('/auth/sso/callback', { code, state })
-        // IBM Verify handled the full authentication experience — registration,
-        // factor enrollment, and login are all managed on the Verify hosted pages.
+        // Store the IBM Verify id_token for use as id_token_hint during step-up.
+        // This lets the step-up flow skip the first-factor screen and go straight
+        // to the second-factor (MFA) challenge.
+        if (data.ibm_id_token) {
+          sessionStorage.setItem('mb_ibm_id_token', data.ibm_id_token)
+        }
         login(data.token, data.user, false, null)
         navigate('/dashboard', { replace: true })
       } catch {

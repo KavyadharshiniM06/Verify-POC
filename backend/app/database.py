@@ -20,3 +20,9 @@ async def init_db():
     async with engine.begin() as conn:
         from app import models  # noqa: F401 — registers all ORM models with Base.metadata
         await conn.run_sync(Base.metadata.create_all)
+        columns = await conn.exec_driver_sql("PRAGMA table_info(users)")
+        column_names = {row[1] for row in columns.fetchall()}
+        if "offboarded_at" not in column_names:
+            await conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN offboarded_at DATETIME"
+            )

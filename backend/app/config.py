@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     # Used when IBM Verify group membership is not included in the ID token.
     admin_emails: str = ""
 
+    # ── SMTP — optional, used to email temp passwords on admin-initiated reset ─
+    # If smtp_host is not set, temp password emails are skipped (admin must
+    # share the password shown in the modal manually).
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from: str = "noreply@mockbank.local"
+    smtp_use_tls: bool = True
+
     # ── Step-up authentication thresholds ────────────────────────────────
     # ACR value sent to IBM Verify during step-up.
     # Set this to the Policy ID / ACR value of your "second factor only" access policy.
@@ -47,7 +57,7 @@ class Settings(BaseSettings):
 
     # Dollar amount above which a transfer requires a fresh step-up challenge.
     # Set to 0 to require step-up for ALL transfers.
-    transfer_stepup_threshold: float = 50000.0
+    transfer_stepup_threshold: float = 100.0
 
     # How long (minutes) a step-up token remains valid after issue.
     # After this window the user must re-verify even if their session is active.

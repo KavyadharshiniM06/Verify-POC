@@ -49,6 +49,36 @@ _bearer = HTTPBearer()
 _FACTOR_PREFERENCE = ["push", "totp", "fido2", "email_otp"]
 
 
+# ── Methods: list what the user has enrolled ──────────────────────────────────
+
+@router.get("/methods")
+async def stepup_methods(
+    current_user: User = Depends(get_current_user),
+):
+    """Return the second factors the user has enrolled in IBM Verify."""
+    try:
+        factors = await verify_client.get_enrolled_factors(current_user.verify_user_id)
+    except Exception:
+        factors = {"fido2": False, "totp": False, "push": False}
+
+    # email_otp is always available for Cloud Directory users
+    factors["email_otp"] = True
+
+    METHOD_META = {
+        "fido2":     {"label": "Passkey / Biometric",    "icon": "🔑", "description": "Use Touch ID, Face ID, or a hardware key"},
+        "push":      {"label": "IBM Verify Push",         "icon": "📱", "description": "Approve a notification on your enrolled device"},
+        "totp":      {"label": "Authenticator App (TOTP)","icon": "🔢", "description": "Enter the 6-digit code from your authenticator app"},
+        "email_otp": {"label": "Email One-Time Password", "icon": "📧", "description": f"Receive a code at {current_user.email}"},
+    }
+
+    available = [
+        {"method": m, **METHOD_META[m]}
+        for m in ("fido2", "push", "totp", "email_otp")
+        if factors.get(m)
+    ]
+    return {"methods": available}
+
+
 # ── Begin: initiate the second-factor challenge ────────────────────────────────
 
 class StepUpBeginRequest(BaseModel):

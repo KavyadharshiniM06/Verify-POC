@@ -20,6 +20,31 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+/** Decode a JWT payload without verifying the signature (client-side only). */
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(base64))
+  } catch {
+    return {}
+  }
+}
+
+/** Check if the JWT's step-up is still within the valid window (mirrors backend logic). */
+function isStepupValidInToken(token: string, durationMinutes = 1): boolean {
+  const payload = decodeJwtPayload(token)
+  if (!payload.stepup_verified) return false
+  const stepupTime = payload.stepup_time as string | null
+  if (!stepupTime) return false
+  try {
+    const t = new Date(stepupTime).getTime()
+    const windowMs = durationMinutes * 60 * 1000
+    return Date.now() - t <= windowMs
+  } catch {
+    return false
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(
     () => sessionStorage.getItem('mb_token')
@@ -28,12 +53,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = sessionStorage.getItem('mb_user')
     return stored ? (JSON.parse(stored) as AuthUser) : null
   })
-  const [stepupVerified, setStepupVerified] = useState<boolean>(
-    () => sessionStorage.getItem('mb_stepup_verified') === 'true'
-  )
-  const [stepupTime, setStepupTime] = useState<string | null>(
-    () => sessionStorage.getItem('mb_stepup_time')
-  )
+
+  // Derive stepupVerified directly from the JWT — never trust sessionStorage alone.
+  // This ensures expiry is respected on page reload without a round-trip to the backend.
+  const [stepupVerified, setStepupVerified] = useState<boolean>(() => {
+    const t = sessionStorage.getItem('mb_token')
+    return t ? isStepupValidInToken(t) : false
+  })
+  const [stepupTime, setStepupTime] = useState<string | null>(() => {
+    const t = sessionStorage.getItem('mb_token')
+    if (!t) return null
+    const payload = decodeJwtPayload(t)
+    return (payload.stepup_time as string | null) ?? null
+  })
 
   const login = (
     newToken: string,
@@ -43,23 +75,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ) => {
     sessionStorage.setItem('mb_token', newToken)
     sessionStorage.setItem('mb_user', JSON.stringify(newUser))
-    sessionStorage.setItem('mb_stepup_verified', String(newStepupVerified))
-    if (newStepupTime) {
-      sessionStorage.setItem('mb_stepup_time', newStepupTime)
-    } else {
-      sessionStorage.removeItem('mb_stepup_time')
-    }
+    // Derive from JWT — don't blindly trust the passed-in flag
+    const derivedStepup = isStepupValidInToken(newToken)
+    const derivedTime = (decodeJwtPayload(newToken).stepup_time as string | null) ?? newStepupTime
     setToken(newToken)
     setUser(newUser)
-    setStepupVerified(newStepupVerified)
-    setStepupTime(newStepupTime)
+    setStepupVerified(derivedStepup || newStepupVerified)
+    setStepupTime(derivedTime)
   }
 
   const logout = () => {
     sessionStorage.removeItem('mb_token')
     sessionStorage.removeItem('mb_user')
-    sessionStorage.removeItem('mb_stepup_verified')
-    sessionStorage.removeItem('mb_stepup_time')
+    sessionStorage.removeItem('mb_ibm_id_token')
     setToken(null)
     setUser(null)
     setStepupVerified(false)

@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
 
 from app.auth.jwt_handler import get_current_user, require_stepup, _is_stepup_valid, decode_session_token
 from app.config import settings
@@ -16,7 +18,6 @@ from app.schemas import (
     TransferRequest,
     TransferResponse,
 )
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 router = APIRouter(prefix="/banking", tags=["banking"])
 
@@ -212,3 +213,208 @@ async def transfer(
         from_balance=from_acct.balance,
         to_balance=to_acct.balance,
     )
+
+
+class AllTransactionRow(BaseModel):
+    id: int
+    account_id: int
+    amount: float
+    description: str
+    category: str
+    merchant: str
+    date: datetime
+    type: str
+    user_name: str
+    user_email: str
+    account_number: str
+    account_type: str
+
+
+@router.get("/all-transactions", response_model=list[AllTransactionRow])
+async def get_all_transactions(
+    page: int = 1,
+    limit: int = 30,
+    category: Optional[str] = None,
+    user_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return transactions across all customers.
+    Accessible to Manager and Admin roles only.
+    Customers are restricted to their own transactions via /banking/transactions.
+    """
+    if current_user.role not in ("Manager", "Admin"):
+        raise HTTPException(status_code=403, detail="Manager or Admin role required")
+
+    query = (
+        select(Transaction, Account, User)
+        .join(Account, Transaction.account_id == Account.id)
+        .join(User, Account.user_id == User.id)
+        # Only show transactions belonging to Customer accounts
+        .where(User.role == "Customer")
+    )
+
+    if user_id is not None:
+        query = query.where(User.id == user_id)
+
+    if category:
+        query = query.where(Transaction.category == category)
+
+    query = (
+        query.order_by(Transaction.date.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    return [
+        AllTransactionRow(
+            id=tx.id,
+            account_id=tx.account_id,
+            amount=tx.amount,
+            description=tx.description,
+            category=tx.category,
+            merchant=tx.merchant,
+            date=tx.date,
+            type=tx.type.value if hasattr(tx.type, "value") else tx.type,
+            user_name=user.name,
+            user_email=user.email,
+            account_number=acct.account_number,
+            account_type=acct.type.value if hasattr(acct.type, "value") else acct.type,
+        )
+        for tx, acct, user in rows
+    ]
+
+
+@router.get("/customers", response_model=list[dict])
+async def get_customers(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the list of customers for the Manager/Admin transaction filter."""
+    if current_user.role not in ("Manager", "Admin"):
+        raise HTTPException(status_code=403, detail="Manager or Admin role required")
+
+    result = await db.execute(
+        select(User.id, User.name, User.email)
+        .where(User.role == "Customer")
+        .where(User.is_active == True)
+        .order_by(User.name)
+    )
+    return [{"id": r.id, "name": r.name, "email": r.email} for r in result.all()]
+
+
+@router.get("/manager-summary")
+async def get_manager_summary(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Aggregated banking stats for Manager / Admin dashboard.
+    Returns customer counts, transaction volumes, top categories, recent activity.
+    """
+    if current_user.role not in ("Manager", "Admin"):
+        raise HTTPException(status_code=403, detail="Manager or Admin role required")
+
+    cutoff_30 = datetime.utcnow() - timedelta(days=30)
+    cutoff_90 = datetime.utcnow() - timedelta(days=90)
+
+    # Total active customers
+    cust_result = await db.execute(
+        select(func.count(User.id)).where(User.role == "Customer").where(User.is_active == True)
+    )
+    total_customers = cust_result.scalar() or 0
+
+    # New customers in last 30 days
+    new_cust_result = await db.execute(
+        select(func.count(User.id))
+        .where(User.role == "Customer")
+        .where(User.created_at >= cutoff_30)
+    )
+    new_customers_30d = new_cust_result.scalar() or 0
+
+    # Total transaction volume (debit) last 30 days
+    vol_result = await db.execute(
+        select(func.sum(Transaction.amount))
+        .join(Account, Transaction.account_id == Account.id)
+        .join(User, Account.user_id == User.id)
+        .where(User.role == "Customer")
+        .where(Transaction.type == TransactionType.debit)
+        .where(Transaction.date >= cutoff_30)
+    )
+    transaction_volume_30d = round(vol_result.scalar() or 0, 2)
+
+    # Transaction count last 30 days
+    tx_count_result = await db.execute(
+        select(func.count(Transaction.id))
+        .join(Account, Transaction.account_id == Account.id)
+        .join(User, Account.user_id == User.id)
+        .where(User.role == "Customer")
+        .where(Transaction.date >= cutoff_30)
+    )
+    transaction_count_30d = tx_count_result.scalar() or 0
+
+    # Top spending categories last 90 days
+    cat_result = await db.execute(
+        select(Transaction.category, func.sum(Transaction.amount).label("total"))
+        .join(Account, Transaction.account_id == Account.id)
+        .join(User, Account.user_id == User.id)
+        .where(User.role == "Customer")
+        .where(Transaction.type == TransactionType.debit)
+        .where(Transaction.date >= cutoff_90)
+        .group_by(Transaction.category)
+        .order_by(func.sum(Transaction.amount).desc())
+        .limit(6)
+    )
+    top_categories = [{"category": r.category, "total": round(r.total, 2)} for r in cat_result]
+
+    # Total assets under management (sum of all positive customer balances)
+    assets_result = await db.execute(
+        select(func.sum(Account.balance))
+        .join(User, Account.user_id == User.id)
+        .where(User.role == "Customer")
+        .where(Account.balance > 0)
+    )
+    total_assets = round(assets_result.scalar() or 0, 2)
+
+    # Recent 8 transactions across all customers
+    recent_result = await db.execute(
+        select(Transaction, Account, User)
+        .join(Account, Transaction.account_id == Account.id)
+        .join(User, Account.user_id == User.id)
+        .where(User.role == "Customer")
+        .order_by(Transaction.date.desc())
+        .limit(8)
+    )
+    recent_txns = [
+        {
+            "id": tx.id,
+            "date": tx.date.isoformat(),
+            "user_name": user.name,
+            "merchant": tx.merchant,
+            "category": tx.category,
+            "amount": tx.amount,
+            "type": tx.type.value if hasattr(tx.type, "value") else tx.type,
+        }
+        for tx, acct, user in recent_result.all()
+    ]
+
+    # Identity stats (for Admin dashboard)
+    offboarded_result = await db.execute(
+        select(func.count(User.id)).where(User.role == "Customer").where(User.is_active == False)
+    )
+    offboarded_customers = offboarded_result.scalar() or 0
+
+    return {
+        "total_customers": total_customers,
+        "new_customers_30d": new_customers_30d,
+        "offboarded_customers": offboarded_customers,
+        "transaction_volume_30d": transaction_volume_30d,
+        "transaction_count_30d": transaction_count_30d,
+        "total_assets": total_assets,
+        "top_categories": top_categories,
+        "recent_transactions": recent_txns,
+    }

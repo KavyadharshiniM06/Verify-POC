@@ -1,11 +1,18 @@
 import enum
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
+class LifecycleAction(str, enum.Enum):
+    joiner = "joiner"
+    mover = "mover"
+    leaver_disable = "leaver_disable"
+    leaver_reinstate = "leaver_reinstate"
+    leaver_delete = "leaver_delete"
 
 class AccountType(str, enum.Enum):
     checking = "checking"
@@ -28,7 +35,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(50), default="Customer")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
+    offboarded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
     accounts: Mapped[list["Account"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -63,3 +70,16 @@ class Transaction(Base):
     type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType))
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
+
+class AuditLog(Base):
+    """Joiner/Mover/Leaver audit trail — every identity lifecycle change is recorded here."""
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_verify_user_id: Mapped[str] = mapped_column(String(255), index=True)
+    target_email: Mapped[str] = mapped_column(String(255))
+    action: Mapped[LifecycleAction] = mapped_column(SAEnum(LifecycleAction))
+    actor_verify_user_id: Mapped[str] = mapped_column(String(255))
+    actor_name: Mapped[str] = mapped_column(String(255))
+    details: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

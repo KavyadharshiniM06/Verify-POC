@@ -1,8 +1,13 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { AuthProvider } from './context/AuthContext'
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
+import AdminUsersPage from './pages/AdminUsersPage'
+import AllTransactionsPage from './pages/AllTransactionsPage'
+import NotificationsPage from './pages/NotificationsPage'
+import SecurityCenterPage from './pages/SecurityCenterPage'
+import SettingsPage from './pages/SettingsPage'
 
 import LoginPage from './pages/LoginPage'
 import OIDCCallbackPage from './pages/OIDCCallbackPage'
@@ -14,11 +19,18 @@ import EmailOTPPage from './pages/EmailOTPPage'
 import DashboardPage from './pages/DashboardPage'
 import TransactionsPage from './pages/TransactionsPage'
 import TransferPage from './pages/TransferPage'
-import ProfilePage from './pages/ProfilePage'
 import StepUpPage from './pages/StepUpPage'
 import StepUpCallbackPage from './pages/StepUpCallbackPage'
 import EnrollMethodPage from './pages/EnrollMethodPage'
-import AdminPage from './pages/AdminPage'
+
+/** Redirect Manager/Admin away from customer-only pages to their landing page. */
+function CustomerOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  if (user?.role === 'Manager' || user?.role === 'Admin') {
+    return <Navigate to="/all-transactions" replace />
+  }
+  return <>{children}</>
+}
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -53,19 +65,31 @@ export default function App() {
           />
           <Route
             path="/transactions"
-            element={<ProtectedLayout><TransactionsPage /></ProtectedLayout>}
+            element={<ProtectedLayout><CustomerOnly><TransactionsPage /></CustomerOnly></ProtectedLayout>}
           />
           <Route
             path="/transfers"
-            element={<ProtectedLayout><TransferPage /></ProtectedLayout>}
+            element={<ProtectedLayout><CustomerOnly><TransferPage /></CustomerOnly></ProtectedLayout>}
           />
           <Route
-            path="/profile"
-            element={<ProtectedLayout><ProfilePage /></ProtectedLayout>}
+            path="/all-transactions"
+            element={<ProtectedLayout><AllTransactionsPage /></ProtectedLayout>}
           />
           <Route
-            path="/admin"
-            element={<ProtectedLayout><AdminPage /></ProtectedLayout>}
+            path="/admin/users"
+            element={<ProtectedLayout><AdminUsersPage /></ProtectedLayout>}
+          />
+          <Route
+            path="/notifications"
+            element={<ProtectedLayout><NotificationsPage /></ProtectedLayout>}
+          />
+          <Route
+            path="/security"
+            element={<ProtectedLayout><SecurityCenterPage /></ProtectedLayout>}
+          />
+          <Route
+            path="/settings"
+            element={<ProtectedLayout><SettingsPage /></ProtectedLayout>}
           />
         </Routes>
       </BrowserRouter>

@@ -86,6 +86,7 @@ def _build_authorize_url(
     acr_values: str = "", login_hint: str = "",
     redirect_uri: str = "",
     force_reauth: bool = False,
+    id_token_hint: str = "",
 ) -> str:
     params: dict = {
         "response_type": "code",
@@ -99,13 +100,16 @@ def _build_authorize_url(
         "code_challenge_method": "S256",
     }
     if force_reauth:
-        # max_age=0 tells IBM Verify the current authentication is considered
-        # expired and the user must re-authenticate.  IBM Verify will use the
-        # user's active session identity but force a fresh factor challenge —
-        # it picks the user's default/enrolled second factor without showing
-        # the first-factor (password/passkey selection) page again.
-        # Do NOT use prompt=login here — that triggers a full login from scratch.
-        params["max_age"] = "0"
+        if id_token_hint:
+            # id_token_hint tells IBM Verify which user this is.
+            # Combined with acr_values requiring a second factor, IBM Verify
+            # will challenge only the second factor — no password page.
+            # Do NOT add max_age=0 here: it forces re-auth from scratch when
+            # the browser session has expired, showing the full login page.
+            params["id_token_hint"] = id_token_hint
+        else:
+            # No hint available — use max_age=0 to force re-verification.
+            params["max_age"] = "0"
     if acr_values:
         params["acr_values"] = acr_values
     if login_hint:
@@ -235,12 +239,20 @@ async def sso_callback(
         result2 = await db.execute(select(User).where(User.email == email))
         user = result2.scalar_one_or_none()
 
+    # Decide which role to use.
+    # IBM Verify groups in the token are authoritative when present.
+    # When the token carries no groups claim (groups not mapped in IBM Verify yet,
+    # or the user has no group memberships), keep the role the admin last assigned
+    # in the local DB rather than resetting to "Customer".
+    token_has_groups = bool(claims.get(settings.verify_group_claim))
+    effective_role = role if token_has_groups else (user.role if user else role)
+
     if not user:
         user = User(
             verify_user_id=verify_user_id,
             email=email,
             name=name,
-            role=role,
+            role=effective_role,
             is_active=True,
         )
         db.add(user)
@@ -250,7 +262,7 @@ async def sso_callback(
         user.verify_user_id = verify_user_id  # update if it changed
         user.email = email
         user.name = name
-        user.role = role
+        user.role = effective_role
         user.is_active = True
 
     await db.commit()
@@ -265,6 +277,11 @@ async def sso_callback(
         "token": token,
         "authenticated": True,
         "stepup_verified": False,
+        # Return the raw IBM Verify id_token so the frontend can store it as
+        # id_token_hint for step-up.  Passing id_token_hint + prompt=login tells
+        # IBM Verify exactly who the user is and skips the password/passkey screen,
+        # going straight to the second-factor challenge.
+        "ibm_id_token": id_token,
         "user": {
             "name": user.name,
             "email": user.email,
@@ -289,6 +306,7 @@ async def get_session_user(current_user: User = Depends(get_current_user)):
 
 class StepUpInitiateRequest(BaseModel):
     return_to: str = "/transfers"
+    id_token_hint: str = ""
 
 
 @router.post("/stepup/initiate")
@@ -321,15 +339,11 @@ async def stepup_initiate(
     step_up_token = create_stepup_token(current_user.verify_user_id, req.return_to)
     auth_url = _build_authorize_url(
         state, nonce, code_challenge,
-        # Pass the configured ACR value so IBM Verify enforces the correct
-        # access policy (e.g. "Require 2FA each session").
-        # Set STEPUP_ACR in .env to the Policy ID shown on the Access Policies
-        # page in the IBM Verify admin console.
-        # If STEPUP_ACR is empty, max_age=0 alone is used (may silently pass).
         acr_values=_MFA_ACR,
         login_hint=current_user.email,
         redirect_uri=stepup_uri,
         force_reauth=True,
+        id_token_hint=req.id_token_hint,
     )
     return {"authorization_url": auth_url, "step_up_token": step_up_token}
 
@@ -454,6 +468,10 @@ async def stepup_complete(
         "authenticated": True,
         "stepup_verified": True,
         "return_to": return_to,
+        # Return the fresh IBM Verify id_token so the frontend can update
+        # mb_ibm_id_token — used as id_token_hint on the next step-up to
+        # skip the first-factor (password) screen.
+        "ibm_id_token": id_token,
         "user": {"name": user.name, "email": user.email, "role": user.role},
     }
 

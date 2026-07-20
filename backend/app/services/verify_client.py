@@ -152,6 +152,140 @@ class VerifyClient:
         resp.raise_for_status()
         return resp.json()
 
+    # ── Group / Role management ───────────────────────────────────────────
+
+    # IBM Verify group displayNames as they exist in the tenant.
+    # "Admin" role maps to the "admin" group (lowercase in IBM Verify).
+    # "Customer" and "Manager" match their groups exactly.
+    _ROLE_TO_GROUP: dict[str, str] = {
+        "Admin": "admin",
+        "Manager": "Manager",
+        "Customer": "Customer",
+    }
+
+    async def _find_group_id(self, group_name: str) -> Optional[str]:
+        """
+        Return the IBM Verify group id whose displayName matches group_name
+        (case-insensitive scan, to handle any casing drift).
+        """
+        headers = await self._user_headers()
+        url = f"{settings.verify_tenant_url}/v2.0/Groups"
+        # Try exact match first using the IBM Verify displayName
+        resp = await self._client.get(
+            url,
+            params={"filter": f'displayName eq "{group_name}"'},
+            headers=headers,
+        )
+        if resp.is_success:
+            resources = resp.json().get("Resources", [])
+            if resources:
+                return resources[0]["id"]
+        # Fall back to a case-insensitive scan across all groups
+        resp_all = await self._client.get(url, headers=headers)
+        if not resp_all.is_success:
+            logger.warning("_find_group_id: GET groups failed %s %s", resp_all.status_code, resp_all.text[:200])
+            return None
+        for g in resp_all.json().get("Resources", []):
+            if g.get("displayName", "").lower() == group_name.lower():
+                return g["id"]
+        return None
+
+    async def _resolve_group_id(self, role: str) -> Optional[str]:
+        """Map an app role string to the IBM Verify group id, using the known name mapping."""
+        ibm_group_name = self._ROLE_TO_GROUP.get(role, role)
+        return await self._find_group_id(ibm_group_name)
+
+    async def sync_user_role_group(self, verify_user_id: str, new_role: str, old_role: Optional[str] = None) -> None:
+        """
+        Keep IBM Verify group membership in sync with the application role.
+
+        - Removes the user from the old role group (if different and it exists).
+        - Adds the user to the new role group (if it exists in IBM Verify).
+
+        Groups must be pre-created in IBM Verify with displayNames that match
+        the role strings exactly: "Customer", "Manager", "Admin".
+        Missing groups are silently skipped so this never breaks the main operation.
+        """
+        if old_role and old_role != new_role:
+            old_gid = await self._resolve_group_id(old_role)
+            if old_gid:
+                await self._remove_user_from_group(verify_user_id, old_gid, old_role)
+
+        new_gid = await self._resolve_group_id(new_role)
+        if new_gid:
+            await self._add_user_to_group(verify_user_id, new_gid, new_role)
+        else:
+            logger.warning(
+                "sync_user_role_group: no group found for role '%s' in IBM Verify — "
+                "check _ROLE_TO_GROUP mapping matches your tenant group names",
+                new_role,
+            )
+
+    async def _add_user_to_group(self, verify_user_id: str, group_id: str, group_name: str) -> None:
+        headers = await self._user_headers()
+        url = f"{settings.verify_tenant_url}/v2.0/Groups/{group_id}"
+        body = {
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [
+                {
+                    "op": "add",
+                    "path": "members",
+                    "value": [{"value": verify_user_id, "type": "user"}],
+                }
+            ],
+        }
+        resp = await self._client.patch(url, content=_json.dumps(body).encode("utf-8"), headers=headers)
+        if resp.is_success:
+            logger.debug("sync_user_role_group: added user %s to group '%s'", verify_user_id, group_name)
+        else:
+            logger.warning(
+                "sync_user_role_group: failed to add user %s to group '%s': %s %s",
+                verify_user_id, group_name, resp.status_code, resp.text[:200],
+            )
+
+    async def _remove_user_from_group(self, verify_user_id: str, group_id: str, group_name: str) -> None:
+        headers = await self._user_headers()
+        url = f"{settings.verify_tenant_url}/v2.0/Groups/{group_id}"
+        # Use a "replace" with the filtered member list excluded, which IBM Verify
+        # handles more reliably than the path-filter remove form.
+        # First fetch the current member list so we can rebuild it without this user.
+        get_resp = await self._client.get(url, headers=headers)
+        if get_resp.is_success:
+            current_members = get_resp.json().get("members", [])
+            new_members = [
+                m for m in current_members
+                if m.get("value") != verify_user_id
+            ]
+            body = {
+                "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                "Operations": [
+                    {
+                        "op": "replace",
+                        "path": "members",
+                        "value": [{"value": m["value"], "type": "user"} for m in new_members],
+                    }
+                ],
+            }
+        else:
+            # Fallback: path-filter form (IBM Verify rejects empty-body PATCH)
+            body = {
+                "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                "Operations": [
+                    {
+                        "op": "remove",
+                        "path": f'members[value eq "{verify_user_id}"]',
+                    }
+                ],
+            }
+        resp = await self._client.patch(url, content=_json.dumps(body).encode("utf-8"), headers=headers)
+        if resp.is_success:
+            logger.debug("sync_user_role_group: removed user %s from group '%s'", verify_user_id, group_name)
+        else:
+            logger.warning(
+                "sync_user_role_group: failed to remove user %s from group '%s': %s %s",
+                verify_user_id, group_name, resp.status_code, resp.text[:200],
+            )
+
     async def get_user_by_id(self, verify_user_id: str) -> dict:
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users/{verify_user_id}"
@@ -193,8 +327,9 @@ class VerifyClient:
             "emails": [{"value": email, "type": "work", "primary": True}],
             "active": active,
         }
-        resp = await self._client.post(url, content=_json.dumps(body), headers=headers)
-        logger.warning("create_user response: %s %s", resp.status_code, resp.text[:300])
+        resp = await self._client.post(url, content=_json.dumps(body).encode("utf-8"), headers=headers)
+        if not resp.is_success:
+            logger.error("create_user failed: %s %s", resp.status_code, resp.text[:300])
         resp.raise_for_status()
         return resp.json()
 
@@ -206,23 +341,40 @@ class VerifyClient:
         get_resp = await self._client.get(url, headers=headers)
         get_resp.raise_for_status()
         current = get_resp.json()
-        username = current.get("userName", email)
+
+        logger.debug("update_user GET current record: %s", _json.dumps(current))
+        logger.debug(
+            "update_user called with: email=%s name=%s  "
+            "current_name_formatted=%s  current_emails=%s",
+            email, name,
+            current.get("name", {}).get("formatted"),
+            current.get("emails"),
+        )
+
         ext = current.get("urn:ietf:params:scim:schemas:extension:ibm:2.0:User", {})
         is_federated = ext.get("userCategory", "regular") == "federated"
 
         if is_federated:
-            # Federated users: IBM Verify only allows userName + active to be changed.
-            # name/email are owned by the identity provider — skip the PUT entirely.
             logger.warning(
-                "update_user: skipping IBM Verify PUT for federated user %s — "
+                "update_user: skipping IBM Verify PATCH for federated user %s — "
                 "name/email are managed by the identity provider",
                 verify_user_id,
             )
             return current
 
-        operations = []
-        if current.get("name", {}).get("formatted") != name:
-            operations.append({"op": "replace", "path": "name.formatted", "value": name})
+        body = {
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [],
+        }
+
+        current_name = current.get("name", {}).get("formatted", "")
+        if current_name != name:
+            logger.debug("update_user: name differs (%r → %r), adding op", current_name, name)
+            body["Operations"].append(
+                {"op": "replace", "path": "name", "value": {"formatted": name}}
+            )
+        else:
+            logger.debug("update_user: name unchanged (%r), skipping", current_name)
 
         current_email = next(
             (
@@ -233,36 +385,73 @@ class VerifyClient:
             "",
         )
         if current_email != email:
-            operations.append(
-                {
-                    "op": "replace",
-                    "path": "emails",
-                    "value": [{"value": email, "type": "work", "primary": True}],
-                }
+            logger.debug("update_user: email differs (%r → %r), adding op", current_email, email)
+            current_emails = current.get("emails", [])
+            new_emails = []
+            for item in current_emails:
+                entry = dict(item)
+                if entry.get("primary") or entry.get("value") == current_email:
+                    entry["value"] = email
+                new_emails.append(entry)
+            if not new_emails:
+                new_emails = [{"value": email, "type": "work", "primary": True}]
+            body["Operations"].append(
+                {"op": "replace", "path": "emails", "value": new_emails}
             )
+        else:
+            logger.debug("update_user: email unchanged (%r), skipping", current_email)
 
-        if not operations:
+        if not body["Operations"]:
+            logger.debug("update_user: nothing changed — skipping PATCH for %s", verify_user_id)
             return current
 
-        body = {
-            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-            "Operations": operations,
+        patch_headers = {
+            "Authorization": headers["Authorization"],
+            "Content-Type": "application/scim+json",
+            "Accept": "application/scim+json",
         }
-        patch_headers = dict(headers)
-        patch_headers["Content-Type"] = "application/json"
-        resp = await self._client.patch(url, content=_json.dumps(body), headers=patch_headers)
-        logger.warning("update_user response: %s %s", resp.status_code, resp.text[:200])
+        raw_body = _json.dumps(body).encode("utf-8")
+        logger.debug("update_user PATCH body (exact): %s", _json.dumps(body))
+        resp = await self._client.patch(url, content=raw_body, headers=patch_headers)
+        if not resp.is_success:
+            logger.error(
+                "update_user PATCH failed for %s: %s %s",
+                verify_user_id, resp.status_code, resp.text,
+            )
         resp.raise_for_status()
         refreshed = await self._client.get(url, headers=headers)
         refreshed.raise_for_status()
+        logger.debug("update_user refreshed record: %s", _json.dumps(refreshed.json()))
         return refreshed.json()
 
     async def set_user_active(self, verify_user_id: str, active: bool) -> dict:
+        """
+        Enable or disable a Cloud Directory user in IBM Verify.
+
+        IBM Verify's /v2.0/Users PATCH endpoint for the `active` attribute
+        requires a full PatchOp envelope.  However some tenant configurations
+        reject the PATCH form entirely for `active`.  Using a PUT of the full
+        current record is the most reliable approach (same pattern as
+        reset_password) and avoids the CSIAI0093E "missing Operations/schemas"
+        400 that IBM Verify returns when it cannot parse the PATCH body.
+        """
         headers = await self._user_headers()
         url = f"{settings.verify_tenant_url}/v2.0/Users/{verify_user_id}"
-        body = {"active": active}
-        # PATCH also needs scim+json to avoid 406
-        resp = await self._client.patch(url, content=_json.dumps(body), headers=headers)
+
+        # Fetch current record so we PUT back a complete, valid resource.
+        get_resp = await self._client.get(url, headers=headers)
+        get_resp.raise_for_status()
+        current = get_resp.json()
+
+        put_body = dict(current)
+        put_body["active"] = active
+
+        resp = await self._client.put(url, content=_json.dumps(put_body).encode("utf-8"), headers=headers)
+        if not resp.is_success:
+            logger.error(
+                "set_user_active PUT failed for %s (active=%s): %s %s",
+                verify_user_id, active, resp.status_code, resp.text[:300],
+            )
         resp.raise_for_status()
         return resp.json() if resp.content else {"id": verify_user_id, "active": active}
 
@@ -272,6 +461,70 @@ class VerifyClient:
         resp = await self._client.delete(url, headers=headers)
         resp.raise_for_status()
 
+    async def reset_password(self, verify_user_id: str) -> str:
+        """
+        Force a password reset for a Cloud Directory user in IBM Verify SaaS.
+
+        Sets a cryptographically random temporary password on the account and
+        marks pwdReset=True so IBM Verify requires the user to choose a new
+        password on their next login.
+
+        Returns the temporary password so the admin can communicate it to the
+        user out-of-band. Federated users are skipped (their password is owned
+        by the external IdP) and a descriptive error is raised instead.
+
+        IBM Verify does not expose a "send reset email" backend API — the only
+        supported admin-side mechanism is PUT /v2.0/Users/{id} with a new
+        password + pwdReset=true.
+        """
+        import secrets as _secrets
+        headers = await self._user_headers()
+        url = f"{settings.verify_tenant_url}/v2.0/Users/{verify_user_id}"
+
+        # Fetch current record
+        get_resp = await self._client.get(url, headers=headers)
+        get_resp.raise_for_status()
+        current = get_resp.json()
+
+        ext = current.get("urn:ietf:params:scim:schemas:extension:ibm:2.0:User", {})
+        if ext.get("userCategory") == "federated":
+            raise ValueError(
+                "Password is managed by the external identity provider for federated users. "
+                "Direct them to reset their password through their IdP."
+            )
+
+        # Generate a secure temporary password that satisfies IBM Verify complexity:
+        # min 8 chars, must contain upper, lower, digit, and special character.
+        alphabet = "abcdefghijklmnopqrstuvwxyz"
+        tmp_pwd = (
+            _secrets.choice(alphabet.upper())          # 1 uppercase
+            + _secrets.choice("0123456789")            # 1 digit
+            + _secrets.choice("!@#$%^&*")              # 1 special
+            + "".join(_secrets.choice(alphabet + alphabet.upper() + "0123456789") for _ in range(13))
+        )
+        # Shuffle to avoid predictable prefix
+        tmp_list = list(tmp_pwd)
+        for i in range(len(tmp_list) - 1, 0, -1):
+            j = _secrets.randbelow(i + 1)
+            tmp_list[i], tmp_list[j] = tmp_list[j], tmp_list[i]
+        tmp_pwd = "".join(tmp_list)
+
+        # PUT the full record back with the new password and pwdReset=True.
+        # IBM Verify will require the user to change the password on next login.
+        put_body = dict(current)
+        put_body["password"] = tmp_pwd
+        put_body.setdefault("urn:ietf:params:scim:schemas:extension:ibm:2.0:User", {})["pwdReset"] = True
+
+        resp = await self._client.put(url, content=_json.dumps(put_body).encode("utf-8"), headers=headers)
+        if not resp.is_success:
+            logger.error(
+                "reset_password failed for %s: %s %s",
+                verify_user_id, resp.status_code, resp.text[:300],
+            )
+        resp.raise_for_status()
+        return tmp_pwd
+
+    
     async def unenroll_factor(self, verify_user_id: str, factor_type: str) -> None:
         """
         Delete all registrations of a given factor type for a user from IBM Verify.
@@ -448,39 +701,76 @@ class VerifyClient:
         """
         Return the enrollmentId for the user's email OTP factor.
         Creates one if none exists, using client_credentials token.
+
+        IBM Verify search param: ?search=userId%3D{id}  (URL-encoded '=')
+        The response envelope key is "emailotp" (list of enrollment objects).
         """
         headers = await self._headers()
         list_url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
 
-        # 1. Check for existing enrollment
-        resp = await self._client.get(
-            list_url,
-            params={"search": f"userId={user_id}"},
-            headers=headers,
-        )
-        if resp.is_success:
-            enrollments = resp.json().get("emailotp", [])
-            enabled = [e for e in enrollments if e.get("enabled") or e.get("validated")]
-            if enabled:
-                return str(enabled[0]["id"])
-            # If any enrollment exists (even disabled) use its id rather than creating a new one
-            if enrollments:
-                return str(enrollments[0]["id"])
+        async def _fetch_existing() -> str | None:
+            """Try both known search param formats and return the first enrollment id found."""
+            for search_val in (f"userId={user_id}", f"userId%3D{user_id}"):
+                r = await self._client.get(
+                    list_url,
+                    params={"search": search_val},
+                    headers=headers,
+                )
+                logger.debug(
+                    "_email_otp_get_or_create_enrollment GET %s → %s %s",
+                    search_val, r.status_code, r.text[:300],
+                )
+                if r.is_success:
+                    enrollments = r.json().get("emailotp", [])
+                    if enrollments:
+                        # Prefer enabled/validated; fall back to any enrollment
+                        enabled = [e for e in enrollments if e.get("enabled") or e.get("validated")]
+                        chosen = enabled[0] if enabled else enrollments[0]
+                        return str(chosen["id"])
+            return None
 
-        # 2. Create enrollment
+        # 1. Try to find an existing enrollment
+        eid = await _fetch_existing()
+        if eid:
+            return eid
+
+        # 2. Create a new enrollment
         logger.debug("Creating email OTP enrollment for user %s", user_id)
         create_resp = await self._client.post(
             list_url,
             json={"userId": user_id, "emailAddress": email},
             headers=headers,
         )
+
+        # 409 = enrollment already exists for this email — fetch it
+        if create_resp.status_code == 409:
+            logger.debug(
+                "Email OTP enrollment 409 for user %s — fetching existing enrollment",
+                user_id,
+            )
+            eid = await _fetch_existing()
+            if eid:
+                return eid
+            # Last resort: list ALL emailotp enrollments and match by userId
+            all_resp = await self._client.get(list_url, headers=headers)
+            if all_resp.is_success:
+                for e in all_resp.json().get("emailotp", []):
+                    if str(e.get("userId", "")) == user_id:
+                        return str(e["id"])
+            raise httpx.HTTPStatusError(
+                "409 and could not locate existing enrollment",
+                request=create_resp.request,
+                response=create_resp,
+            )
+
         if not create_resp.is_success:
             logger.error(
                 "Email OTP enrollment create %s: %s",
                 create_resp.status_code,
                 create_resp.text,
             )
-        create_resp.raise_for_status()
+            create_resp.raise_for_status()
+
         enrollment = create_resp.json()
         eid = str(enrollment["id"])
 
@@ -509,9 +799,10 @@ class VerifyClient:
 
         IBM Verify endpoint:
           POST /v2.0/factors/emailotp/{enrollmentId}/verifications
+        Requires the admin ROPC token — client_credentials returns 403 on this endpoint.
         Returns a transaction object whose `id` is used in email_otp_verify.
         """
-        headers = await self._headers()
+        headers = await self._admin_headers()
         eid = await self._email_otp_get_or_create_enrollment(user_id, email)
         url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/{eid}/verifications"
         resp = await self._client.post(url, json={}, headers=headers)
@@ -526,9 +817,10 @@ class VerifyClient:
 
         IBM Verify endpoint:
           PUT /v2.0/factors/emailotp/verifications/{transactionId}
+        Requires the admin ROPC token — client_credentials returns 403 on this endpoint.
         Body: { "otp": "<code>" }
         """
-        headers = await self._headers()
+        headers = await self._admin_headers()
         url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp/verifications/{transaction_id}"
         body = {"otp": otp_code}
         resp = await self._client.put(url, json=body, headers=headers)

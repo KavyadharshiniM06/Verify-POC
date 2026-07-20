@@ -98,9 +98,11 @@ export default function AdminPage() {
       const { data } = await api.get<ListResponse>('/users', {
         params: { search: q, page: p, page_size: PAGE_SIZE },
       })
-      setUsers(data.users)
-      setTotal(data.total)
+      setUsers(Array.isArray(data.users) ? data.users : [])
+      setTotal(typeof data.total === 'number' ? data.total : 0)
     } catch {
+      setUsers([])
+      setTotal(0)
       setErr('Failed to load users.')
     } finally {
       setTableLoading(false)

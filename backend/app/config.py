@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # How long (minutes) a step-up token remains valid after issue.
     # After this window the user must re-verify even if their session is active.
-    stepup_duration_minutes: int = 0
+    stepup_duration_minutes: int = 0.2
 
     # When True, every admin operation (create/update/disable/delete user) requires
     # a valid step-up even if the admin already completed one earlier in the session.

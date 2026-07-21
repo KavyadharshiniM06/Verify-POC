@@ -57,9 +57,6 @@ function GearIcon() {
 function BellIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
 }
-function SearchIcon() {
-  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-}
 function LogoutIcon() {
   return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 }
@@ -176,17 +173,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div style={s.main}>
         {/* Top bar */}
         <header style={s.header}>
-          {/* Search */}
-          <div style={s.searchWrap}>
-            <span style={s.searchIcon}><SearchIcon /></span>
-            <input
-              style={s.searchInput}
-              placeholder="Search transactions, payees, cards…"
-              readOnly
-            />
-            <span style={s.searchKbd}>⌘ K</span>
-          </div>
-
           <div style={s.headerRight}>
             {/* Notifications */}
             <div style={{ position: 'relative' }} ref={notifRef}>
@@ -321,24 +307,8 @@ const s: Record<string, React.CSSProperties> = {
   header: {
     background: T.bg, borderBottom: `1px solid ${T.border}`,
     padding: '0.75rem 1.75rem',
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
     gap: '1rem',
-  },
-  searchWrap: {
-    display: 'flex', alignItems: 'center', gap: '0.6rem',
-    background: T.bgCard, border: `1px solid ${T.border}`,
-    borderRadius: '8px', padding: '0.52rem 0.85rem',
-    flex: '0 0 380px',
-  },
-  searchIcon: { color: T.inkSub, display: 'flex', alignItems: 'center', flexShrink: 0 },
-  searchInput: {
-    flex: 1, background: 'transparent', border: 'none', outline: 'none',
-    color: T.inkSub, fontSize: '0.85rem', fontFamily: T.fontFamily,
-  },
-  searchKbd: {
-    fontSize: '0.68rem', color: T.inkLight, background: T.bgMuted,
-    border: `1px solid ${T.border}`, borderRadius: '4px',
-    padding: '0.1rem 0.35rem', flexShrink: 0,
   },
   headerRight: { display: 'flex', alignItems: 'center', gap: '0.5rem' },
 

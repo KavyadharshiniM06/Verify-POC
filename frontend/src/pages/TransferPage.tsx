@@ -20,8 +20,10 @@ export default function TransferPage() {
   const [toId,     setToId]     = useState('')
   const [amount,   setAmount]   = useState('')
   const [loading,  setLoading]  = useState(false)
+  const [reverting, setReverting] = useState(false)
   const [success,  setSuccess]  = useState<string | null>(null)
   const [error,    setError]    = useState<string | null>(null)
+  const [lastTransfer, setLastTransfer] = useState<PendingTransfer | null>(null)
 
   useEffect(() => {
     api.get<Account[]>('/banking/accounts').then(r => {
@@ -34,7 +36,10 @@ export default function TransferPage() {
   // Success return from StepUpCallbackPage
   useEffect(() => {
     if (searchParams.get('stepup_success') === '1') {
+      const raw = sessionStorage.getItem('mb_last_transfer')
+      if (raw) { try { setLastTransfer(JSON.parse(raw)) } catch { /* ignore */ } }
       setSuccess('Transfer completed successfully.')
+      setError(null)
       setSearchParams({}, { replace: true })
       api.get<Account[]>('/banking/accounts').then(r => setAccounts(r.data)).catch(() => {})
     }
@@ -47,17 +52,30 @@ export default function TransferPage() {
   const accountLabel = (a: Account) =>
     `${a.type.charAt(0).toUpperCase() + a.type.slice(1)} ••${a.account_number.slice(-4)} — $${a.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
 
+  function handleSwap() {
+    setFromId(toId)
+    setToId(fromId)
+    setError(null)
+    setSuccess(null)
+  }
+
   async function handleTransfer() {
+    // Clear both messages first so they never appear simultaneously
+    setError(null)
+    setSuccess(null)
     if (!fromId || !toId) { setError('Select both accounts'); return }
     if (fromId === toId) { setError('Source and destination must differ'); return }
     if (isNaN(amt) || amt <= 0) { setError('Enter a valid amount'); return }
     setLoading(true)
-    setError(null)
-    setSuccess(null)
     try {
+      const pending: PendingTransfer = { from_account_id: parseInt(fromId), to_account_id: parseInt(toId), amount: amt }
       const { data } = await api.post<{ message: string }>('/banking/transfer', {
-        from_account_id: parseInt(fromId), to_account_id: parseInt(toId), amount: amt,
+        from_account_id: pending.from_account_id,
+        to_account_id: pending.to_account_id,
+        amount: pending.amount,
       })
+      setLastTransfer(pending)
+      sessionStorage.setItem('mb_last_transfer', JSON.stringify(pending))
       setSuccess(data.message)
       setAmount('')
       const { data: fresh } = await api.get<Account[]>('/banking/accounts')
@@ -68,12 +86,45 @@ export default function TransferPage() {
       if (detail && typeof detail === 'object' && detail.code === 'STEP_UP_REQUIRED') {
         const pending: PendingTransfer = { from_account_id: parseInt(fromId), to_account_id: parseInt(toId), amount: amt }
         sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending))
+        sessionStorage.setItem('mb_last_transfer', JSON.stringify(pending))
         navigate('/stepup?return_to=/transfers')
         return
       }
       setError(typeof detail === 'string' ? detail : 'Transfer failed. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleRevert() {
+    if (!lastTransfer) return
+    setReverting(true)
+    setError(null)
+    setSuccess(null)
+    const revert: PendingTransfer = {
+      from_account_id: lastTransfer.to_account_id,
+      to_account_id: lastTransfer.from_account_id,
+      amount: lastTransfer.amount,
+    }
+    try {
+      await api.post('/banking/transfer', revert)
+      const amt = lastTransfer.amount
+      setLastTransfer(null)
+      sessionStorage.removeItem('mb_last_transfer')
+      setSuccess(`Transfer of $${amt.toFixed(2)} has been reversed.`)
+      const { data: fresh } = await api.get<Account[]>('/banking/accounts')
+      setAccounts(fresh)
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: StepUpDetail | string } } }
+      const detail = err?.response?.data?.detail
+      if (detail && typeof detail === 'object' && detail.code === 'STEP_UP_REQUIRED') {
+        sessionStorage.setItem(PENDING_KEY, JSON.stringify(revert))
+        navigate('/stepup?return_to=/transfers')
+        return
+      }
+      setError(typeof detail === 'string' ? detail : 'Revert failed. Please try again.')
+    } finally {
+      setReverting(false)
     }
   }
 
@@ -114,10 +165,10 @@ export default function TransferPage() {
             )}
           </div>
 
-          {/* Swap icon */}
+          {/* Swap button */}
           <div style={s.swapRow}>
             <div style={s.swapLine} />
-            <div style={s.swapCircle}>⇅</div>
+            <button style={s.swapCircle} onClick={handleSwap} title="Swap accounts">⇅</button>
             <div style={s.swapLine} />
           </div>
 
@@ -151,7 +202,16 @@ export default function TransferPage() {
           </div>
 
           {error   && <div style={s.errBox}>{error}</div>}
-          {success && <div style={s.successBox}>✓ {success}</div>}
+          {success && (
+            <div style={s.successBox}>
+              <span>✓ {success}</span>
+              {lastTransfer && (
+                <button style={s.revertLink} onClick={handleRevert} disabled={reverting}>
+                  {reverting ? 'Reversing…' : '↩ Revert'}
+                </button>
+              )}
+            </div>
+          )}
 
           <button style={{ ...s.transferBtn, opacity: loading ? 0.7 : 1 }} onClick={handleTransfer} disabled={loading}>
             {loading ? 'Processing…' : '↑  Transfer Funds'}
@@ -252,7 +312,7 @@ const s: Record<string, React.CSSProperties> = {
     width: '36px', height: '36px', borderRadius: '50%',
     border: `1px solid ${T.border}`, background: T.bgCard, color: T.inkSub,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '1rem', flexShrink: 0,
+    fontSize: '1rem', flexShrink: 0, cursor: 'pointer',
   },
 
   amountWrapper: { position: 'relative' as const },
@@ -278,6 +338,13 @@ const s: Record<string, React.CSSProperties> = {
   successBox: {
     background: T.greenLight, border: `1px solid ${T.greenBorder}`, color: T.green,
     borderRadius: T.radiusInner, padding: '0.65rem 1rem', fontSize: '0.83rem', marginBottom: '1rem',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem',
+  },
+  revertLink: {
+    background: 'none', border: `1px solid ${T.greenBorder}`, color: T.green,
+    borderRadius: T.radiusPill, padding: '0.2rem 0.65rem', cursor: 'pointer',
+    fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
   },
 
   transferBtn: {

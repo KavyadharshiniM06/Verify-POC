@@ -102,11 +102,11 @@ def _build_authorize_url(
     if force_reauth:
         if id_token_hint:
             # id_token_hint tells IBM Verify which user this is.
-            # Combined with acr_values requiring a second factor, IBM Verify
-            # will challenge only the second factor — no password page.
-            # Do NOT add max_age=0 here: it forces re-auth from scratch when
-            # the browser session has expired, showing the full login page.
+            # prompt=login combined with id_token_hint forces IBM Verify to
+            # re-challenge the second factor even when the existing session
+            # already satisfies the ACR policy — prevents silent token reuse.
             params["id_token_hint"] = id_token_hint
+            
         else:
             # No hint available — use max_age=0 to force re-verification.
             params["max_age"] = "0"

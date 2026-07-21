@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { T } from '../styles/theme'
 
 type Category = 'All' | 'Unread' | 'Transactions' | 'Security' | 'Transfers' | 'Identity' | 'Approvals'
 
@@ -25,11 +26,11 @@ const MOCK: Notification[] = [
 const CATEGORIES: Category[] = ['All', 'Unread', 'Transactions', 'Security', 'Transfers', 'Identity', 'Approvals']
 
 const CATEGORY_COLORS: Record<Exclude<Category, 'All' | 'Unread'>, string> = {
-  Transactions: '#3b82d4',
-  Security:     '#ef4444',
+  Transactions: T.blue,
+  Security:     T.red,
   Transfers:    '#7c5cd8',
-  Identity:     '#059669',
-  Approvals:    '#d97706',
+  Identity:     T.green,
+  Approvals:    T.amber,
 }
 
 export default function NotificationsPage() {
@@ -88,11 +89,16 @@ export default function NotificationsPage() {
             filtered.map(n => (
               <div
                 key={n.id}
-                style={{ ...s.item, background: n.unread ? '#f0fdf4' : '#fff' }}
+                style={{ ...s.item, background: n.unread ? T.bgHighlight : T.bgCard }}
                 onClick={() => markRead(n.id)}
               >
                 <div style={s.itemTop}>
-                  <span style={{ ...s.catTag, background: CATEGORY_COLORS[n.category] + '18', color: CATEGORY_COLORS[n.category], border: `1px solid ${CATEGORY_COLORS[n.category]}33` }}>
+                  <span style={{
+                    ...s.catTag,
+                    background: CATEGORY_COLORS[n.category] + '18',
+                    color: CATEGORY_COLORS[n.category],
+                    border: `1px solid ${CATEGORY_COLORS[n.category]}33`,
+                  }}>
                     {n.category}
                   </span>
                   <span style={s.itemTime}>{n.time}</span>
@@ -110,28 +116,56 @@ export default function NotificationsPage() {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  root:         { fontFamily: '-apple-system,"Segoe UI",system-ui,sans-serif' },
+  root:         { fontFamily: T.fontFamily },
   pageHeader:   { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' },
-  pageTitle:    { fontSize: '1.4rem', fontWeight: 700, color: '#1a2e2a', margin: 0 },
-  pageSub:      { fontSize: '0.82rem', color: '#57606a', marginTop: '0.25rem' },
-  markAllBtn:   { padding: '0.45rem 1rem', background: '#1a2e2a', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 },
+  pageTitle:    { fontSize: '1.5rem', fontWeight: 800, color: T.ink, margin: 0, letterSpacing: '-0.02em' },
+  pageSub:      { fontSize: '0.82rem', color: T.inkSub, marginTop: '0.25rem' },
+  markAllBtn: {
+    padding: '0.45rem 1.1rem', background: T.ink, color: T.bg,
+    border: 'none', borderRadius: T.radiusPill, cursor: 'pointer',
+    fontSize: '0.82rem', fontWeight: 700,
+  },
 
-  body:         { display: 'flex', gap: '1.5rem', alignItems: 'flex-start' },
+  body:     { display: 'flex', gap: '1.25rem', alignItems: 'flex-start' },
 
-  sidebar:      { width: '180px', flexShrink: 0, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '2px' },
-  catBtn:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.55rem 0.75rem', background: 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.84rem', color: '#57606a', fontWeight: 500, width: '100%', textAlign: 'left' as const },
-  catBtnActive: { background: '#f0fdf4', color: '#1a2e2a', fontWeight: 700 },
-  catCount:     { fontSize: '0.72rem', background: '#f3f4f6', color: '#57606a', padding: '0.1rem 0.45rem', borderRadius: '999px', fontWeight: 600 },
-  catCountActive: { background: '#dcfce7', color: '#166534' },
+  sidebar: {
+    width: '180px', flexShrink: 0, background: T.bgCard,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusCard,
+    boxShadow: T.shadowCard,
+    padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '2px',
+  },
+  catBtn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '0.55rem 0.75rem', background: 'transparent', border: 'none',
+    borderRadius: '10px', cursor: 'pointer', fontSize: '0.84rem', color: T.inkSub,
+    fontWeight: 500, width: '100%', textAlign: 'left' as const,
+  },
+  catBtnActive: { background: T.amberLight, color: T.amber, fontWeight: 700 },
+  catCount: {
+    fontSize: '0.7rem', background: T.bgMuted, color: T.inkSub,
+    padding: '0.1rem 0.45rem', borderRadius: '999px', fontWeight: 700,
+  },
+  catCountActive: { background: T.amberBorder, color: T.amber },
 
-  list:         { flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem' },
-  empty:        { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '2.5rem', textAlign: 'center' as const, color: '#57606a', fontSize: '0.9rem' },
+  list:  { flex: 1, display: 'flex', flexDirection: 'column', gap: '0.65rem' },
+  empty: {
+    background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusCard,
+    padding: '2.5rem', textAlign: 'center' as const, color: T.inkSub, fontSize: '0.9rem',
+    boxShadow: T.shadowCard,
+  },
 
-  item:         { border: '1px solid #e5e7eb', borderRadius: '12px', padding: '1rem 1.25rem', cursor: 'pointer', transition: 'border-color 0.15s' },
-  itemTop:      { display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' },
-  catTag:       { fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.5rem', borderRadius: '999px', letterSpacing: '0.03em' },
-  itemTime:     { fontSize: '0.72rem', color: '#9ca3af', marginLeft: 'auto' },
-  unreadDot:    { width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', flexShrink: 0 },
-  itemTitle:    { fontSize: '0.9rem', fontWeight: 700, color: '#1f2328', marginBottom: '0.2rem' },
-  itemBody:     { fontSize: '0.82rem', color: '#57606a', lineHeight: 1.5 },
+  item: {
+    border: `1px solid ${T.border}`, borderRadius: T.radiusInner,
+    padding: '1rem 1.25rem', cursor: 'pointer',
+    boxShadow: T.shadowCard,
+  },
+  itemTop:  { display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.4rem' },
+  catTag: {
+    fontSize: '0.66rem', fontWeight: 700, padding: '0.12rem 0.5rem',
+    borderRadius: '999px', letterSpacing: '0.04em',
+  },
+  itemTime:  { fontSize: '0.72rem', color: T.inkLight, marginLeft: 'auto' },
+  unreadDot: { width: '7px', height: '7px', borderRadius: '50%', background: T.amber, flexShrink: 0 },
+  itemTitle: { fontSize: '0.9rem', fontWeight: 700, color: T.ink, marginBottom: '0.2rem' },
+  itemBody:  { fontSize: '0.82rem', color: T.inkSub, lineHeight: 1.55 },
 }

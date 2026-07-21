@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import { T } from '../styles/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ManagedUser {
@@ -102,10 +103,10 @@ function UploadIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
 }
 function ShieldOnIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
 }
 function ShieldOffIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.inkLight} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 }
 function DotsIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
@@ -119,9 +120,9 @@ function XIcon() {
 
 // ─── Role badge ───────────────────────────────────────────────────────────────
 const ROLE_STYLE: Record<string, { bg: string; color: string; border: string }> = {
-  Customer: { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  Manager:  { bg: '#f5f3ff', color: '#7c3aed', border: '#ddd6fe' },
-  Admin:    { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' },
+  Customer: { bg: T.bgMuted,     color: T.inkSub, border: T.border     },
+  Manager:  { bg: T.blueLight,   color: T.blue,   border: T.blue + '44' },
+  Admin:    { bg: T.amberLight,  color: T.amber,  border: T.amberBorder },
 }
 function RoleBadge({ role }: { role: string }) {
   const st = ROLE_STYLE[role] ?? ROLE_STYLE.Customer
@@ -141,13 +142,13 @@ function RoleBadge({ role }: { role: string }) {
 // ─── Risk bar ─────────────────────────────────────────────────────────────────
 function RiskBar({ score }: { score: number }) {
   const pct = Math.min(score, 100)
-  const color = pct < 30 ? '#10b981' : pct < 60 ? '#f59e0b' : '#ef4444'
+  const color = pct < 30 ? T.green : pct < 60 ? T.amber : T.red
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <div style={{ width: '72px', height: '5px', background: '#f3f4f6', borderRadius: '99px', overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ width: '72px', height: '5px', background: T.bgMuted, borderRadius: '99px', overflow: 'hidden', flexShrink: 0 }}>
         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: '99px' }} />
       </div>
-      <span style={{ fontSize: '0.75rem', color: '#57606a', fontWeight: 600, minWidth: '20px' }}>{score}</span>
+      <span style={{ fontSize: '0.75rem', color: T.inkSub, fontWeight: 600, minWidth: '20px' }}>{score}</span>
     </div>
   )
 }
@@ -191,15 +192,15 @@ function ActionMenu({
       </button>
       {open && (
         <div style={m.menu}>
-          {item('Edit user',       '#1f2328', onEdit)}
-          {item('View history',    '#1f2328', onHistory)}
-          {item('Reset password',  '#7c3aed', onResetPwd)}
+          {item('Edit user',       T.ink,   onEdit)}
+          {item('View history',    T.ink,   onHistory)}
+          {item('Reset password',  '#a78bfa', onResetPwd)}
           <div style={m.menuDivider} />
           {user.is_active
-            ? item('Suspend access', '#f59e0b', onDisable)
-            : item('Reinstate',      '#10b981', onReinstate)
+            ? item('Suspend access', T.amber, onDisable)
+            : item('Reinstate',      T.green, onReinstate)
           }
-          {item('Delete user', '#ef4444', onDelete)}
+          {item('Delete user', T.red, onDelete)}
         </div>
       )}
     </div>
@@ -209,14 +210,14 @@ function ActionMenu({
 const m: Record<string, React.CSSProperties> = {
   dotsBtn: {
     width: '30px', height: '30px', borderRadius: '6px',
-    border: '1px solid #e5e7eb', background: '#fff',
+    border: `1px solid ${T.border}`, background: T.bgCard,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    cursor: 'pointer', color: '#57606a',
+    cursor: 'pointer', color: T.inkSub,
   },
   menu: {
     position: 'absolute', right: 0, top: 'calc(100% + 4px)',
-    background: '#fff', border: '1px solid #e5e7eb',
-    borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '10px', boxShadow: T.shadowPop,
     zIndex: 100, minWidth: '160px', padding: '0.35rem',
     display: 'flex', flexDirection: 'column', gap: '1px',
   },
@@ -226,7 +227,7 @@ const m: Record<string, React.CSSProperties> = {
     border: 'none', borderRadius: '6px', cursor: 'pointer',
     fontSize: '0.82rem', fontWeight: 500,
   },
-  menuDivider: { height: '1px', background: '#f3f4f6', margin: '0.2rem 0' },
+  menuDivider: { height: '1px', background: T.borderLight, margin: '0.2rem 0' },
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -266,13 +267,13 @@ export default function AdminUsersPage() {
   }).length
 
   const STATS = [
-    { label: 'Total Users',   value: total,     color: '#1f2328' },
-    { label: 'Active',        value: active,    color: '#10b981' },
-    { label: 'Pending',       value: 0,         color: '#f59e0b' },
-    { label: 'Suspended',     value: suspended, color: '#ef4444' },
-    { label: 'Admins',        value: admins,    color: '#8b5cf6' },
-    { label: 'Managers',      value: managers,  color: '#3b82f6' },
-    { label: 'Customers',     value: customers, color: '#2563eb' },
+    { label: 'Total Users',   value: total,     color: T.ink },
+    { label: 'Active',        value: active,    color: T.green },
+    { label: 'Pending',       value: 0,         color: T.amber },
+    { label: 'Suspended',     value: suspended, color: T.red },
+    { label: 'Admins',        value: admins,    color: '#a78bfa' },
+    { label: 'Managers',      value: managers,  color: T.blue },
+    { label: 'Customers',     value: customers, color: T.blue },
     { label: 'Joined (7d)',   value: joined7d,  color: '#0ea5e9' },
   ]
 
@@ -330,7 +331,7 @@ export default function AdminUsersPage() {
   })
 
   if (me?.role !== 'Admin') {
-    return <div style={{ padding: '3rem', textAlign: 'center', color: '#57606a' }}>Admin role required.</div>
+    return <div style={{ padding: '3rem', textAlign: 'center', color: T.inkSub }}>Admin role required.</div>
   }
 
   return (
@@ -342,8 +343,6 @@ export default function AdminUsersPage() {
           <p style={s.pageSub}>Manage the complete employee identity lifecycle across onboarding, access reviews, role changes and offboarding.</p>
         </div>
         <div style={s.headActions}>
-          <button style={s.outlineBtn} title="Bulk Import"><UploadIcon /> Bulk Import</button>
-          <button style={s.outlineBtn} title="Export"><DownloadIcon /> Export</button>
           <button style={s.outlineBtn} onClick={load} title="Refresh"><RefreshIcon /> Refresh</button>
           <button style={s.primaryBtn} onClick={() => setForm({ kind: 'create' })}>
             + Onboard User
@@ -364,7 +363,7 @@ export default function AdminUsersPage() {
       {error && (
         <div style={s.errorBox}>
           <span>⚠ {error}</span>
-          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626' }} onClick={() => setError(null)}><XIcon /></button>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.red }} onClick={() => setError(null)}><XIcon /></button>
         </div>
       )}
 
@@ -433,7 +432,7 @@ export default function AdminUsersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ ...s.td, textAlign: 'center', color: '#9ca3af', padding: '3rem' }}>
+                  <td colSpan={10} style={{ ...s.td, textAlign: 'center', color: T.inkSub, padding: '3rem' }}>
                     No users match your search.
                   </td>
                 </tr>
@@ -449,7 +448,7 @@ export default function AdminUsersPage() {
                 return (
                   <tr
                     key={u.id}
-                    style={{ ...s.tr, background: isSel ? '#f0fdf4' : idx % 2 === 0 ? '#fff' : '#fafafa' }}
+                    style={{ ...s.tr, background: isSel ? T.amberLight : idx % 2 === 0 ? T.bgCard : T.bgMuted }}
                   >
                     {/* Checkbox */}
                     <td style={s.td}>
@@ -470,7 +469,7 @@ export default function AdminUsersPage() {
                     </td>
 
                     {/* Department */}
-                    <td style={{ ...s.td, color: '#57606a', fontSize: '0.83rem' }}>{dept}</td>
+                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.83rem' }}>{dept}</td>
 
                     {/* Role */}
                     <td style={s.td}><RoleBadge role={u.role} /></td>
@@ -481,18 +480,18 @@ export default function AdminUsersPage() {
                         display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                         fontSize: '0.72rem', fontWeight: 700,
                         padding: '0.18rem 0.55rem', borderRadius: '999px',
-                        background: u.is_active ? '#f0fdf4' : '#fef2f2',
-                        color:      u.is_active ? '#16a34a' : '#dc2626',
-                        border:     `1px solid ${u.is_active ? '#86efac' : '#fecaca'}`,
+                        background: u.is_active ? T.greenLight : T.redLight,
+                        color:      u.is_active ? T.green : T.red,
+                        border:     `1px solid ${u.is_active ? T.greenBorder : T.redBorder}`,
                       }}>
-                        <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: u.is_active ? '#16a34a' : '#dc2626' }} />
+                        <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: u.is_active ? T.green : T.red }} />
                         {u.is_active ? 'Active' : 'Suspended'}
                       </span>
                     </td>
 
                     {/* Manager (mock) */}
-                    <td style={{ ...s.td, color: '#57606a', fontSize: '0.83rem' }}>
-                      {mockDept(u.id).split(' ')[0]} {['Sharma','Reyes','Patel','Zhang','Jones'][mockRisk(u.name) % 5]}
+                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.83rem' }}>
+                      {['James Harrington','Sarah Mitchell','David Chen','Priya Nair','Marcus Webb','Olivia Thornton','Aisha Kaur','Robert Stein'][mockRisk(u.id) % 8]}
                     </td>
 
                     {/* Risk bar */}
@@ -504,7 +503,7 @@ export default function AdminUsersPage() {
                     </td>
 
                     {/* Last login */}
-                    <td style={{ ...s.td, color: '#57606a', fontSize: '0.82rem' }}>{lastLogin}</td>
+                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.82rem' }}>{lastLogin}</td>
 
                     {/* Actions */}
                     <td style={{ ...s.td, textAlign: 'center' }}>
@@ -527,7 +526,7 @@ export default function AdminUsersPage() {
         {/* Table footer */}
         {!loading && (
           <div style={s.tableFooter}>
-            <span style={{ color: '#57606a', fontSize: '0.8rem' }}>
+            <span style={{ color: T.inkSub, fontSize: '0.8rem' }}>
               Showing {filtered.length} of {total} users
               {selected.size > 0 && ` · ${selected.size} selected`}
             </span>
@@ -560,11 +559,11 @@ export default function AdminUsersPage() {
               </div>
               <button style={s.closeBtn} onClick={() => setTempPwdModal(null)}><XIcon /></button>
             </div>
-            <p style={{ fontSize: '0.85rem', color: '#57606a', margin: '0 0 1rem' }}>
+            <p style={{ fontSize: '0.85rem', color: T.inkSub, margin: '0 0 1rem' }}>
               Share this temporary password securely. The user must change it on next login.
             </p>
             <div style={s.pwdBox}>{tempPwdModal.password}</div>
-            <p style={{ fontSize: '0.78rem', color: '#d97706', margin: '0 0 1.25rem', display: 'flex', gap: '0.35rem' }}>
+            <p style={{ fontSize: '0.78rem', color: T.amber, margin: '0 0 1.25rem', display: 'flex', gap: '0.35rem' }}>
               ⚠ This password will not be shown again. Copy it now.
             </p>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -589,13 +588,13 @@ export default function AdminUsersPage() {
               <button style={s.closeBtn} onClick={() => setAuditFor(null)}><XIcon /></button>
             </div>
             {auditEntries.length === 0 ? (
-              <p style={{ color: '#9ca3af', fontSize: '0.875rem', textAlign: 'center', padding: '2rem 0' }}>
+              <p style={{ color: T.inkSub, fontSize: '0.875rem', textAlign: 'center', padding: '2rem 0' }}>
                 No lifecycle events recorded yet.
               </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: '400px', overflowY: 'auto' }}>
                 {auditEntries.map((e, i) => {
-                  const color = ACTION_COLOR[e.action] ?? '#57606a'
+                  const color = ACTION_COLOR[e.action] ?? T.inkSub
                   return (
                     <div key={i} style={s.auditRow}>
                       <div style={{ ...s.auditDot, background: color }} />
@@ -604,12 +603,12 @@ export default function AdminUsersPage() {
                           <span style={{ fontSize: '0.82rem', fontWeight: 700, color }}>
                             {ACTION_LABEL[e.action] ?? e.action}
                           </span>
-                          <span style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
+                          <span style={{ fontSize: '0.75rem', color: T.inkSub }}>
                             by {e.actor_name}
                           </span>
                         </div>
-                        {e.details && <div style={{ fontSize: '0.78rem', color: '#57606a', marginTop: '0.15rem' }}>{e.details}</div>}
-                        <div style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: '0.15rem' }}>
+                        {e.details && <div style={{ fontSize: '0.78rem', color: T.inkSub, marginTop: '0.15rem' }}>{e.details}</div>}
+                        <div style={{ fontSize: '0.72rem', color: T.inkLight, marginTop: '0.15rem' }}>
                           {new Date(e.created_at).toLocaleString()}
                         </div>
                       </div>
@@ -665,7 +664,7 @@ function UserFormModal({
         <div style={s.modalHead}>
           <div>
             <div style={s.modalTitle}>{isEdit ? 'Edit User (Mover)' : 'Onboard New User (Joiner)'}</div>
-            <div style={s.modalSub}>{isEdit ? `Updating ${existing?.name}` : 'Create a new identity in IBM Verify'}</div>
+            <div style={s.modalSub}>{isEdit ? `Updating ${existing?.name}` : 'Create a new identity'}</div>
           </div>
           <button style={s.closeBtn} onClick={onClose}><XIcon /></button>
         </div>
@@ -693,10 +692,10 @@ function UserFormModal({
                   <button
                     key={String(v)}
                     style={{
-                      flex: 1, padding: '0.5rem', border: `1.5px solid ${isActive === v ? (v ? '#16a34a' : '#dc2626') : '#e5e7eb'}`,
+                      flex: 1, padding: '0.5rem', border: `1.5px solid ${isActive === v ? (v ? T.greenBorder : T.redBorder) : T.border}`,
                       borderRadius: '7px', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem',
-                      background: isActive === v ? (v ? '#f0fdf4' : '#fef2f2') : '#fff',
-                      color: isActive === v ? (v ? '#16a34a' : '#dc2626') : '#9ca3af',
+                      background: isActive === v ? (v ? T.greenLight : T.redLight) : T.bgInput,
+                      color: isActive === v ? (v ? T.green : T.red) : T.inkSub,
                     }}
                     onClick={() => setIsActive(v)}
                   >
@@ -723,77 +722,77 @@ function UserFormModal({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
-  root:      { fontFamily: '-apple-system,"Segoe UI",system-ui,sans-serif' },
+  root:      { fontFamily: T.fontFamily },
 
   pageHead:  { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' },
-  pageTitle: { fontSize: '1.55rem', fontWeight: 700, color: '#1f2328', margin: 0 },
-  pageSub:   { fontSize: '0.82rem', color: '#57606a', marginTop: '0.25rem', maxWidth: '560px' },
+  pageTitle: { fontSize: '1.55rem', fontWeight: 700, color: T.ink, margin: 0 },
+  pageSub:   { fontSize: '0.82rem', color: T.inkSub, marginTop: '0.25rem', maxWidth: '560px' },
   headActions:{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
 
   // Stat cards
   statsRow:  { display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: '0.75rem', marginBottom: '1.5rem' },
-  statCard:  { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '0.9rem 1rem' },
+  statCard:  { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '0.9rem 1rem', boxShadow: T.shadowCard },
   statLabel: { fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: '0.4rem' },
-  statValue: { fontSize: '1.75rem', fontWeight: 700, color: '#1f2328', lineHeight: 1 },
+  statValue: { fontSize: '1.75rem', fontWeight: 700, color: T.ink, lineHeight: 1 },
 
   // Toolbar
   toolbar:   { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' },
   searchWrap:{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', minWidth: '240px' },
-  searchIcon:{ position: 'absolute', left: '0.85rem', color: '#9ca3af', display: 'flex', pointerEvents: 'none' },
+  searchIcon:{ position: 'absolute', left: '0.85rem', color: T.inkSub, display: 'flex', pointerEvents: 'none' },
   searchInput:{
     width: '100%', padding: '0.6rem 0.9rem 0.6rem 2.4rem',
-    border: '1px solid #e5e7eb', borderRadius: '8px',
-    fontSize: '0.85rem', color: '#1f2328', outline: 'none',
-    background: '#fff', boxSizing: 'border-box' as const,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    fontSize: '0.85rem', color: T.ink, outline: 'none',
+    background: T.bgInput, boxSizing: 'border-box' as const,
   },
   filters:   { display: 'flex', gap: '0.4rem' },
   filterSelect: {
-    padding: '0.55rem 0.85rem', border: '1px solid #e5e7eb', borderRadius: '8px',
-    background: '#fff', fontSize: '0.82rem', color: '#374151',
+    padding: '0.55rem 0.85rem', border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    background: T.bgInput, fontSize: '0.82rem', color: T.ink,
     cursor: 'pointer', fontWeight: 500, fontFamily: 'inherit',
   },
 
   // Table
-  tableWrap: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' },
-  loadingRow:{ padding: '3rem', textAlign: 'center' as const, color: '#9ca3af', fontSize: '0.9rem' },
+  tableWrap: { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusCard, overflow: 'hidden', boxShadow: T.shadowCard },
+  loadingRow:{ padding: '3rem', textAlign: 'center' as const, color: T.inkSub, fontSize: '0.9rem' },
   table:     { width: '100%', borderCollapse: 'collapse' as const },
-  thead:     { background: '#f9fafb' },
+  thead:     { background: T.bgMuted },
   th: {
     padding: '0.7rem 0.9rem', textAlign: 'left' as const,
-    fontSize: '0.72rem', fontWeight: 700, color: '#6b7280',
+    fontSize: '0.68rem', fontWeight: 700, color: T.inkSub,
     textTransform: 'uppercase' as const, letterSpacing: '0.05em',
-    borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap' as const,
+    borderBottom: `1px solid ${T.border}`, whiteSpace: 'nowrap' as const,
   },
-  tr:        { borderBottom: '1px solid #f3f4f6', transition: 'background 0.1s' },
-  td:        { padding: '0.75rem 0.9rem', fontSize: '0.85rem', color: '#1f2328', verticalAlign: 'middle' as const },
-  cb:        { cursor: 'pointer', width: '14px', height: '14px', accentColor: '#1a2e2a' },
+  tr:        { borderBottom: `1px solid ${T.borderLight}`, transition: 'background 0.1s' },
+  td:        { padding: '0.75rem 0.9rem', fontSize: '0.85rem', color: T.ink, verticalAlign: 'middle' as const },
+  cb:        { cursor: 'pointer', width: '14px', height: '14px', accentColor: T.amber },
 
   // User cell
   avatar: {
     width: '34px', height: '34px', borderRadius: '50%',
-    color: '#fff', display: 'flex', alignItems: 'center',
+    color: '#0d1117', display: 'flex', alignItems: 'center',
     justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem', flexShrink: 0,
   },
-  userName:  { fontSize: '0.87rem', fontWeight: 600, color: '#1f2328' },
-  userEmail: { fontSize: '0.74rem', color: '#9ca3af', marginTop: '0.1rem' },
+  userName:  { fontSize: '0.87rem', fontWeight: 600, color: T.ink },
+  userEmail: { fontSize: '0.74rem', color: T.inkSub, marginTop: '0.1rem' },
 
   tableFooter: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '0.75rem 1rem', borderTop: '1px solid #f3f4f6',
+    padding: '0.75rem 1rem', borderTop: `1px solid ${T.borderLight}`,
   },
-  pageBtn:      { padding: '0.35rem 0.65rem', border: '1px solid #e5e7eb', borderRadius: '6px', background: '#fff', cursor: 'pointer', fontSize: '0.78rem', color: '#57606a' },
-  pageBtnActive:{ background: '#1a2e2a', color: '#fff', borderColor: '#1a2e2a' },
+  pageBtn:      { padding: '0.35rem 0.65rem', border: `1px solid ${T.border}`, borderRadius: T.radiusPill, background: T.bgMuted, cursor: 'pointer', fontSize: '0.78rem', color: T.inkSub },
+  pageBtnActive:{ background: T.amber, color: '#0d1117', borderColor: T.amber },
 
   // Buttons
   primaryBtn: {
-    padding: '0.55rem 1.1rem', background: '#1a2e2a', color: '#fff',
-    border: 'none', borderRadius: '8px', cursor: 'pointer',
+    padding: '0.55rem 1.1rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: T.radiusPill, cursor: 'pointer',
     fontWeight: 700, fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
     fontFamily: 'inherit',
   },
   outlineBtn: {
-    padding: '0.5rem 0.9rem', background: '#fff', color: '#374151',
-    border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer',
+    padding: '0.5rem 0.9rem', background: T.bgMuted, color: T.ink,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer',
     fontWeight: 600, fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.4rem',
     fontFamily: 'inherit',
   },
@@ -801,37 +800,37 @@ const s: Record<string, React.CSSProperties> = {
   // Error
   errorBox: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-    borderRadius: '8px', padding: '0.6rem 0.9rem',
+    background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red,
+    borderRadius: T.radiusInner, padding: '0.6rem 0.9rem',
     fontSize: '0.83rem', marginBottom: '1rem',
   },
 
   // Modal
-  overlay:   { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' },
-  modal:     { background: '#fff', borderRadius: '14px', padding: '1.75rem', width: '100%', maxWidth: '460px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' },
+  overlay:   { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' },
+  modal:     { background: T.bgCard, borderRadius: T.radiusCard, padding: '1.75rem', width: '100%', maxWidth: '460px', boxShadow: T.shadowPop, border: `1px solid ${T.border}` },
   modalHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' },
-  modalTitle:{ fontSize: '1.05rem', fontWeight: 700, color: '#1f2328' },
-  modalSub:  { fontSize: '0.78rem', color: '#9ca3af', marginTop: '0.2rem' },
-  closeBtn:  { background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: '0.1rem', display: 'flex' },
+  modalTitle:{ fontSize: '1.05rem', fontWeight: 700, color: T.ink },
+  modalSub:  { fontSize: '0.78rem', color: T.inkSub, marginTop: '0.2rem' },
+  closeBtn:  { background: 'none', border: 'none', cursor: 'pointer', color: T.inkSub, padding: '0.1rem', display: 'flex' },
 
   pwdBox: {
-    background: '#f7f8fa', border: '1px solid #e5e7eb', borderRadius: '8px',
+    background: T.bgMuted, border: `1px solid ${T.border}`, borderRadius: T.radiusInner,
     padding: '0.85rem 1rem', fontFamily: 'monospace', fontSize: '1rem',
-    letterSpacing: '0.05em', color: '#1f2328', wordBreak: 'break-all' as const,
+    letterSpacing: '0.05em', color: T.green, wordBreak: 'break-all' as const,
     marginBottom: '0.75rem',
   },
 
   // Form
   formGrid:  { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' },
   fieldWrap: { display: 'flex', flexDirection: 'column', gap: '0.3rem' },
-  label:     { fontSize: '0.78rem', fontWeight: 600, color: '#57606a' },
+  label:     { fontSize: '0.78rem', fontWeight: 600, color: T.inkSub },
   input: {
-    padding: '0.55rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '7px',
-    fontSize: '0.87rem', color: '#1f2328', outline: 'none', boxSizing: 'border-box' as const,
-    background: '#fff', fontFamily: 'inherit',
+    padding: '0.55rem 0.75rem', border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    fontSize: '0.87rem', color: T.ink, outline: 'none', boxSizing: 'border-box' as const,
+    background: T.bgInput, fontFamily: 'inherit',
   },
 
   // Audit
-  auditRow:  { display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.75rem', background: '#f9fafb', borderRadius: '8px' },
+  auditRow:  { display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.75rem', background: T.bgMuted, borderRadius: T.radiusInner },
   auditDot:  { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, marginTop: '4px' },
 }

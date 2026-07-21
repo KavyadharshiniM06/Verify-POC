@@ -1,42 +1,25 @@
 import React, { useState } from 'react'
 import api from '../api/axios'
+import { T } from '../styles/theme'
 
-// ── SVG icons ────────────────────────────────────────────────────────────────
-function ShieldCheckIcon() {
+function ShieldIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
       <polyline points="9 12 11 14 15 10"/>
     </svg>
   )
 }
 
-// ── Trust-signal logos (text-based, no external assets) ──────────────────────
-const TRUST_LOGOS = [
-  'FDIC Insured', 'AES-256 Encrypted', 'SOC 2 Type II', 'PCI DSS Level 1',
-  'ISO 27001', 'CCPA Compliant', 'GDPR Ready', 'MFA Protected',
+const STATS = [
+  { value: '$4.2B', label: 'Assets managed' },
+  { value: '128k',  label: 'Private clients' },
+  { value: '99.99%', label: 'Uptime SLA' },
 ]
 
 const TESTIMONIALS = [
-  {
-    quote: '"MockBank gives me total confidence in every transfer. The security is second to none — I never worry about my money."',
-    name: 'Sarah Mitchell',
-    title: 'Small Business Owner',
-    initials: 'SM',
-  },
-  {
-    quote: '"The step-up authentication for large transfers is brilliant. It\'s exactly what I needed for peace of mind."',
-    name: 'James Okafor',
-    title: 'Senior Financial Analyst',
-    initials: 'JO',
-  },
-]
-
-const FEATURES = [
-  { icon: '🔒', label: 'Bank-grade encryption' },
-  { icon: '🛡', label: 'Fraud monitoring 24/7' },
-  { icon: '⚡', label: 'Instant transfers' },
-  { icon: '📱', label: 'Multi-factor security' },
+  { quote: 'Total confidence in every transfer. Security second to none.', name: 'Sarah Mitchell', title: 'Business Owner', initials: 'SM' },
+  { quote: 'Step-up authentication for large transfers is exactly what I needed.', name: 'James Okafor', title: 'Financial Analyst', initials: 'JO' },
 ]
 
 export default function LoginPage() {
@@ -60,42 +43,60 @@ export default function LoginPage() {
     <div style={s.root}>
       {/* ── Left panel ─────────────────────────────────────────── */}
       <div style={s.left}>
-        {/* Brand */}
-        <div style={s.brand}>
-          <div style={s.brandMark}>M</div>
-          <span style={s.brandName}>MockBank</span>
-        </div>
-
-        {/* Form area */}
-        <div style={s.formWrap}>
-          <h1 style={s.heading}>Welcome Back!</h1>
-          <p style={s.sub}>Sign in securely to access your accounts and manage your finances.</p>
-
-          {error && (
-            <div style={s.errorBox}>
-              <span style={{ marginRight: '0.4rem' }}>⚠</span>{error}
+        <div style={s.leftInner}>
+          {/* Brand */}
+          <div style={s.brand}>
+            <div style={s.brandMark}>M</div>
+            <div>
+              <div style={s.brandName}>MockBank</div>
+              <div style={s.brandSub}>Digital Banking · Est. 2024</div>
             </div>
-          )}
+          </div>
 
-          {/* Single sign-in button */}
-          <button style={s.signInBtn} onClick={handleLogin} disabled={loading}>
-            {loading ? (
-              <span style={s.btnRow}>
-                <span style={s.spinner} />
-                Redirecting…
-              </span>
-            ) : (
-              <span style={s.btnRow}>
-                <ShieldCheckIcon />
-                Sign In to MockBank
-              </span>
-            )}
-          </button>
+          <div style={s.leftSpacer} />
 
-          {/* Security note */}
-          <div style={s.secNote}>
-            <span style={{ color: '#1a2e2a' }}><ShieldCheckIcon /></span>
-            <span>Protected by 256-bit encryption and multi-factor authentication</span>
+          {/* Status pill */}
+          <div style={s.statusPill}>
+            <span style={s.statusDot} />
+            <span>All systems operational</span>
+          </div>
+
+          {/* Headline */}
+          <h1 style={s.headline}>
+            Banking, refined<br />
+            for the <span style={s.accentText}>next decade.</span>
+          </h1>
+
+          <p style={s.tagline}>
+            Accounts, transfers, cards and portfolio —<br />
+            orchestrated in one calm interface, protected by<br />
+            hardware-grade authentication.
+          </p>
+
+          <div style={s.dividerHoriz} />
+
+          {/* Stats row */}
+          <div style={s.statsRow}>
+            {STATS.map(stat => (
+              <div key={stat.label} style={s.statItem}>
+                <div style={s.statValue}>{stat.value}</div>
+                <div style={s.statLabel}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={s.leftSpacer} />
+
+          {/* Bottom trust row */}
+          <div style={s.trustRow}>
+            <span style={s.trustItem}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              FDIC insured to $250,000
+            </span>
+            <span style={s.trustItem}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              AES-256 · TLS 1.3
+            </span>
           </div>
         </div>
       </div>
@@ -103,44 +104,37 @@ export default function LoginPage() {
       {/* ── Right panel ────────────────────────────────────────── */}
       <div style={s.right}>
         <div style={s.rightInner}>
-          {/* Headline */}
-          <div style={s.rightTop}>
-            <h2 style={s.rightHeading}>
-              Secure Banking for the Modern World
-            </h2>
-
-            {/* Feature pills */}
-            <div style={s.featureGrid}>
-              {FEATURES.map(f => (
-                <div key={f.label} style={s.featurePill}>
-                  <span>{f.icon}</span>
-                  <span>{f.label}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Testimonial */}
-            <div style={s.testimonialBox}>
-              <div style={s.quoteIcon}>"</div>
-              <p style={s.quoteText}>{testimonial.quote}</p>
-              <div style={s.quotePerson}>
-                <div style={s.quoteAvatar}>{testimonial.initials}</div>
-                <div>
-                  <div style={s.quoteName}>{testimonial.name}</div>
-                  <div style={s.quoteTitle}>{testimonial.title}</div>
-                </div>
-              </div>
-            </div>
+          <div style={s.formHeader}>
+            <div style={s.welcomeBack}>Welcome back</div>
+            <h2 style={s.signInTitle}>Sign in to your account</h2>
+            <p style={s.signInSub}>Sign in securely using your registered credentials.</p>
           </div>
 
-          {/* Trust logos */}
-          <div style={s.trustSection}>
-            <div style={s.trustLabel}>TRUSTED &amp; CERTIFIED</div>
-            <div style={s.dividerLine} />
-            <div style={s.trustGrid}>
-              {TRUST_LOGOS.map(t => (
-                <div key={t} style={s.trustBadge}>{t}</div>
-              ))}
+          {error && (
+            <div style={s.errorBox}>⚠ {error}</div>
+          )}
+
+          {/* Primary CTA */}
+          <button style={s.signInBtn} onClick={handleLogin} disabled={loading}>
+            {loading ? (
+              <span style={s.btnRow}><span style={s.spinner} /> Redirecting…</span>
+            ) : (
+              <span style={s.btnRow}>
+                <ShieldIcon />
+                Continue securely →
+              </span>
+            )}
+          </button>
+
+          {/* Testimonial */}
+          <div style={s.testimonialBox}>
+            <div style={s.testimonialQuote}>&ldquo;{testimonial.quote}&rdquo;</div>
+            <div style={s.testimonialPerson}>
+              <div style={s.testimonialAvatar}>{testimonial.initials}</div>
+              <div>
+                <div style={s.testimonialName}>{testimonial.name}</div>
+                <div style={s.testimonialTitle}>{testimonial.title}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -149,193 +143,118 @@ export default function LoginPage() {
   )
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-const DARK = '#1a2e2a'
-const ACCENT = '#4ade80'
-
 const s: Record<string, React.CSSProperties> = {
   root: {
-    display: 'flex',
-    minHeight: '100vh',
-    fontFamily: '-apple-system,"Segoe UI",system-ui,sans-serif',
+    display: 'flex', minHeight: '100vh', fontFamily: T.fontFamily,
+    background: T.bg, color: T.ink,
   },
 
   // ── Left ──
   left: {
-    flex: '0 0 50%',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '2rem 3rem',
-    background: '#fff',
-    overflowY: 'auto',
+    flex: '0 0 55%', display: 'flex', flexDirection: 'column',
+    background: T.bg, padding: 0, position: 'relative' as const,
   },
-  brand: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.55rem',
-    marginBottom: '2.5rem',
+  leftInner: {
+    flex: 1, display: 'flex', flexDirection: 'column',
+    padding: '2.5rem 3rem 2rem',
   },
+  leftSpacer: { flex: 1 },
+  brand: { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '3rem' },
   brandMark: {
-    width: '36px', height: '36px', borderRadius: '9px',
-    background: DARK, color: ACCENT,
+    width: '40px', height: '40px', borderRadius: '10px',
+    background: T.amber, color: '#0d1117',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontWeight: 800, fontSize: '1.1rem',
+    fontWeight: 900, fontSize: '1.2rem',
   },
-  brandName: {
-    fontWeight: 700, fontSize: '1.2rem', color: DARK, letterSpacing: '-0.01em',
-  },
-  formWrap: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    maxWidth: '400px',
-    width: '100%',
-  },
-  heading: { margin: '0 0 0.4rem', fontSize: '1.9rem', fontWeight: 700, color: '#1f2328', letterSpacing: '-0.02em' },
-  sub:     { margin: '0 0 2rem', fontSize: '0.88rem', color: '#57606a', lineHeight: 1.55 },
+  brandName: { fontSize: '1rem', fontWeight: 700, color: T.ink, letterSpacing: '-0.01em' },
+  brandSub: { fontSize: '0.68rem', color: T.inkSub, marginTop: '0.1rem' },
 
-  form: { display: 'flex', flexDirection: 'column', gap: '0' },
-
-  fieldGroup: { marginBottom: '1.1rem' },
-  label:      { display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#374151', marginBottom: '0.4rem' },
-  inputWrap:  { position: 'relative', display: 'flex', alignItems: 'center' },
-  inputIcon:  {
-    position: 'absolute', left: '0.8rem', color: '#9ca3af',
-    display: 'flex', alignItems: 'center', pointerEvents: 'none',
+  statusPill: {
+    display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '999px', padding: '0.3rem 0.85rem',
+    fontSize: '0.75rem', color: T.inkSub, marginBottom: '1.5rem',
+    width: 'fit-content',
   },
-  input: {
-    width: '100%', padding: '0.7rem 0.9rem 0.7rem 2.4rem',
-    border: '1.5px solid #e5e7eb', borderRadius: '9px',
-    fontSize: '0.9rem', color: '#1f2328', outline: 'none',
-    boxSizing: 'border-box',
-    background: '#fff',
-    transition: 'border-color 0.15s',
-  },
-  eyeBtn: {
-    position: 'absolute', right: '0.8rem',
-    background: 'none', border: 'none', cursor: 'pointer',
-    color: '#9ca3af', display: 'flex', alignItems: 'center', padding: 0,
-  },
-  forgotRow: { display: 'flex', justifyContent: 'flex-end', marginTop: '0.4rem' },
-  forgotBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    fontSize: '0.8rem', color: '#1a2e2a', fontWeight: 600, padding: 0,
+  statusDot: {
+    width: '7px', height: '7px', borderRadius: '50%', background: T.green, flexShrink: 0,
   },
 
-  errorBox: {
-    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-    borderRadius: '8px', padding: '0.65rem 0.85rem',
-    fontSize: '0.83rem', marginBottom: '1rem',
-    display: 'flex', alignItems: 'center',
+  headline: {
+    fontSize: '3.2rem', fontWeight: 800, lineHeight: 1.1,
+    letterSpacing: '-0.03em', margin: '0 0 1.25rem', color: T.ink,
   },
-
-  signInBtn: {
-    width: '100%', padding: '0.82rem',
-    background: DARK, color: '#fff',
-    border: 'none', borderRadius: '9px',
-    fontWeight: 700, fontSize: '0.95rem',
-    cursor: 'pointer', marginBottom: '1.1rem',
-    letterSpacing: '0.01em',
+  accentText: { color: T.amber },
+  tagline: {
+    fontSize: '1rem', color: T.inkSub, lineHeight: 1.65,
+    margin: '0 0 2rem', fontWeight: 400,
   },
+  dividerHoriz: { height: '1px', background: T.border, marginBottom: '2rem' },
 
-  orRow:  { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.1rem' },
-  orLine: { flex: 1, height: '1px', background: '#e5e7eb' },
-  orText: { fontSize: '0.75rem', color: '#9ca3af', fontWeight: 600, whiteSpace: 'nowrap' },
+  statsRow: { display: 'flex', gap: '3rem' },
+  statItem: {},
+  statValue: { fontSize: '1.6rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.02em' },
+  statLabel: { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.15rem' },
 
-  ssoBtn: {
-    width: '100%', padding: '0.78rem',
-    background: '#fff', color: '#1f2328',
-    border: '1.5px solid #e5e7eb', borderRadius: '9px',
-    fontWeight: 600, fontSize: '0.88rem',
-    cursor: 'pointer', marginBottom: '1.5rem',
-  },
-  btnRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' },
-  spinner: {
-    display: 'inline-block', width: '14px', height: '14px',
-    border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff',
-    borderRadius: '50%', animation: 'spin 0.7s linear infinite',
-  },
-
-  secNote: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    fontSize: '0.75rem', color: '#6b7280',
+  trustRow: { display: 'flex', gap: '1.5rem', flexWrap: 'wrap' as const },
+  trustItem: {
+    display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+    fontSize: '0.72rem', color: T.inkSub,
   },
 
   // ── Right ──
   right: {
-    flex: '0 0 50%',
-    background: DARK,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
+    flex: '0 0 45%', display: 'flex', flexDirection: 'column',
+    background: T.bgCard, borderLeft: `1px solid ${T.border}`,
   },
   rightInner: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    padding: '3rem 3rem 2.5rem',
+    flex: 1, display: 'flex', flexDirection: 'column',
+    justifyContent: 'center', padding: '3rem 3rem',
+    maxWidth: '420px', margin: '0 auto', width: '100%',
   },
-  rightTop: {},
-  rightHeading: {
-    color: '#fff', fontSize: '2.3rem', fontWeight: 700,
-    lineHeight: 1.2, letterSpacing: '-0.02em',
-    margin: '0 0 2rem',
+  formHeader: { marginBottom: '2rem' },
+  welcomeBack: { fontSize: '0.82rem', color: T.inkSub, marginBottom: '0.4rem' },
+  signInTitle: {
+    fontSize: '2rem', fontWeight: 800, color: T.ink,
+    letterSpacing: '-0.03em', margin: '0 0 0.5rem', lineHeight: 1.1,
+  },
+  signInSub: { fontSize: '0.85rem', color: T.inkSub, margin: 0, lineHeight: 1.5 },
+
+  errorBox: {
+    background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red,
+    borderRadius: '8px', padding: '0.7rem 1rem', fontSize: '0.85rem', marginBottom: '1rem',
   },
 
-  featureGrid: {
-    display: 'grid', gridTemplateColumns: '1fr 1fr',
-    gap: '0.65rem', marginBottom: '2.5rem',
+  signInBtn: {
+    width: '100%', padding: '0.9rem',
+    background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: '8px',
+    fontWeight: 700, fontSize: '1rem',
+    cursor: 'pointer', marginBottom: '2rem',
+    letterSpacing: '0.01em',
   },
-  featurePill: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-    borderRadius: '8px', padding: '0.65rem 0.9rem',
-    fontSize: '0.82rem', color: 'rgba(255,255,255,0.85)', fontWeight: 500,
+  btnRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' },
+  spinner: {
+    display: 'inline-block', width: '14px', height: '14px',
+    border: '2px solid rgba(0,0,0,0.2)', borderTopColor: '#000',
+    borderRadius: '50%', animation: 'spin 0.7s linear infinite',
   },
 
   testimonialBox: {
-    background: 'rgba(255,255,255,0.07)',
-    border: '1px solid rgba(255,255,255,0.12)',
-    borderRadius: '14px',
-    padding: '1.5rem 1.6rem',
+    background: T.bgMuted, border: `1px solid ${T.border}`,
+    borderRadius: '10px', padding: '1.25rem',
   },
-  quoteIcon: {
-    fontSize: '2rem', fontWeight: 900,
-    color: ACCENT, lineHeight: 1, marginBottom: '0.5rem',
+  testimonialQuote: {
+    fontSize: '0.88rem', color: T.inkSub, lineHeight: 1.65,
+    marginBottom: '1rem', fontStyle: 'italic',
   },
-  quoteText: {
-    color: 'rgba(255,255,255,0.88)', fontSize: '0.93rem',
-    lineHeight: 1.65, margin: '0 0 1.25rem', fontStyle: 'italic',
-  },
-  quotePerson: { display: 'flex', alignItems: 'center', gap: '0.75rem' },
-  quoteAvatar: {
-    width: '40px', height: '40px', borderRadius: '50%',
-    background: ACCENT, color: DARK,
+  testimonialPerson: { display: 'flex', alignItems: 'center', gap: '0.75rem' },
+  testimonialAvatar: {
+    width: '36px', height: '36px', borderRadius: '50%',
+    background: T.amber, color: '#0d1117',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontWeight: 800, fontSize: '0.9rem', flexShrink: 0,
+    fontWeight: 800, fontSize: '0.8rem', flexShrink: 0,
   },
-  quoteName:  { fontSize: '0.87rem', fontWeight: 700, color: '#fff' },
-  quoteTitle: { fontSize: '0.76rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.1rem' },
-
-  trustSection: { marginTop: '2.5rem' },
-  trustLabel: {
-    fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.1em',
-    color: 'rgba(255,255,255,0.4)', marginBottom: '0.75rem',
-  },
-  dividerLine: { height: '1px', background: 'rgba(255,255,255,0.1)', marginBottom: '1rem' },
-  trustGrid: {
-    display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '0.5rem',
-  },
-  trustBadge: {
-    background: 'rgba(255,255,255,0.07)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: '6px', padding: '0.45rem 0.5rem',
-    fontSize: '0.68rem', fontWeight: 600,
-    color: 'rgba(255,255,255,0.55)',
-    textAlign: 'center',
-    letterSpacing: '0.01em',
-  },
+  testimonialName:  { fontSize: '0.85rem', fontWeight: 700, color: T.ink },
+  testimonialTitle: { fontSize: '0.72rem', color: T.inkSub },
 }

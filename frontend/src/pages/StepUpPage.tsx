@@ -1,26 +1,8 @@
-/**
- * StepUpPage — shows the user's enrolled MFA methods, then redirects
- * to IBM Verify's OIDC step-up flow which challenges the second factor.
- *
- * IBM Verify's factor /verifications API requires a user-context token that
- * cannot be obtained server-side (ROPC is blocked by adaptive access).
- * The only reliable path is the OIDC redirect: IBM Verify challenges the
- * user's enrolled second factor on its own hosted page (or silently via
- * browser WebAuthn for passkeys), then returns a code we exchange for a
- * new JWT with stepup_verified=true.
- *
- * Flow:
- *   1. GET  /auth/stepup/methods         → show enrolled factors to the user
- *   2. User clicks "Continue"
- *   3. POST /auth/sso/stepup/initiate    → get authorization_url
- *   4. Browser redirects to IBM Verify  → second factor challenged
- *   5. IBM Verify redirects → /stepup-callback
- *   6. StepUpCallbackPage exchanges code → new JWT → back to returnTo
- */
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import { T } from '../styles/theme'
 
 type Phase = 'loading' | 'ready' | 'redirecting' | 'error'
 
@@ -59,7 +41,7 @@ export default function StepUpPage() {
       setMethods(data.methods)
       setPhase('ready')
     } catch {
-      setErrorMsg('Could not load your MFA methods. Please try again.')
+      setErrorMsg('Could not load your verification methods. Please try again.')
       setPhase('error')
     }
   }
@@ -76,7 +58,7 @@ export default function StepUpPage() {
       sessionStorage.setItem('mb_stepup_return_to', returnTo)
       window.location.href = data.authorization_url
     } catch {
-      setErrorMsg('Could not start MFA challenge. Please try again.')
+      setErrorMsg('Could not start verification challenge. Please try again.')
       setPhase('error')
     }
   }
@@ -84,66 +66,82 @@ export default function StepUpPage() {
   return (
     <div style={s.container}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      <div style={s.card}>
-        <div style={s.lockIcon}>🔐</div>
-        <h2 style={s.title}>Additional Verification Required</h2>
-        <p style={s.sub}>
-          Transfers above $100 require a second factor.
-        </p>
 
-        {/* Loading */}
-        {phase === 'loading' && (
-          <div style={s.centered}>
-            <div style={s.spinner} />
-            <p style={s.hint}>Checking your enrolled methods…</p>
+      {/* Header bar */}
+      <div style={s.topBar}>
+        <div style={s.brandMark}>
+          <div style={s.brandIcon}>M</div>
+          <span style={s.brandName}>MockBank</span>
+        </div>
+        <div style={s.secureTag}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Secure session
+        </div>
+      </div>
+
+      <div style={s.body}>
+        <div style={s.card}>
+
+          {/* Shield icon */}
+          <div style={s.shieldWrap}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.amber} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           </div>
-        )}
 
-        {/* Error */}
-        {phase === 'error' && (
-          <>
-            <div style={s.err}>{errorMsg}</div>
-            <button style={s.primaryBtn} onClick={() => { calledRef.current = false; setPhase('loading'); void fetchMethods() }}>
-              Retry
-            </button>
-          </>
-        )}
+          <h2 style={s.title}>Verify Your Identity</h2>
+          <p style={s.sub}>
+            For your security, transfers above $100 require an additional verification step before proceeding.
+          </p>
 
-        {/* Ready — show enrolled methods and a single Continue button */}
-        {phase === 'ready' && (
-          <>
-            <p style={s.sectionLabel}>Your enrolled verification methods:</p>
-            <div style={s.methodList}>
-              {methods.map(opt => (
-                <div key={opt.method} style={s.methodRow}>
-                  <span style={s.methodIcon}>{opt.icon}</span>
-                  <span style={s.methodText}>
-                    <span style={s.methodLabel}>{opt.label}</span>
-                    <span style={s.methodDesc}>{opt.description}</span>
-                  </span>
-                </div>
-              ))}
+          {/* Loading */}
+          {phase === 'loading' && (
+            <div style={s.centered}>
+              <div style={s.spinner} />
+              <p style={s.hint}>Checking your enrolled methods…</p>
             </div>
-            <p style={s.hint}>
-              IBM Verify will challenge you with your second factor.
-            </p>
-            <button style={s.primaryBtn} onClick={initiateRedirect}>
-              Continue to Verify →
-            </button>
-          </>
-        )}
+          )}
 
-        {/* Redirecting */}
-        {phase === 'redirecting' && (
-          <div style={s.centered}>
-            <div style={s.spinner} />
-            <p style={s.hint}>Redirecting to IBM Verify…</p>
+          {/* Error */}
+          {phase === 'error' && (
+            <>
+              <div style={s.err}>{errorMsg}</div>
+              <button style={s.primaryBtn} onClick={() => { calledRef.current = false; setPhase('loading'); void fetchMethods() }}>
+                Retry
+              </button>
+            </>
+          )}
+
+          {/* Ready */}
+          {phase === 'ready' && (
+            <>
+              <div style={s.infoBox}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.amber} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '1px' }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span>A second-factor challenge will be required to authorise this transaction.</span>
+              </div>
+
+              <button style={s.primaryBtn} onClick={initiateRedirect}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Continue
+              </button>
+            </>
+          )}
+
+          {/* Redirecting */}
+          {phase === 'redirecting' && (
+            <div style={s.centered}>
+              <div style={s.spinner} />
+              <p style={s.hint}>Launching secure verification…</p>
+            </div>
+          )}
+
+          <button style={s.cancelBtn} onClick={() => navigate(returnTo)}>
+            Cancel and go back
+          </button>
+
+          <div style={s.footer}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.inkLight} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span>Protected by 256-bit TLS encryption</span>
           </div>
-        )}
-
-        <button style={s.cancelBtn} onClick={() => navigate(returnTo)}>
-          Cancel
-        </button>
+        </div>
       </div>
     </div>
   )
@@ -151,50 +149,83 @@ export default function StepUpPage() {
 
 const s: Record<string, React.CSSProperties> = {
   container: {
-    minHeight: '100vh', background: '#f7f8fa',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+    minHeight: '100vh', background: T.bg,
+    display: 'flex', flexDirection: 'column',
+    fontFamily: T.fontFamily,
+  },
+  topBar: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '1rem 1.75rem', borderBottom: `1px solid ${T.border}`,
+    background: T.bgCard,
+  },
+  brandMark: { display: 'flex', alignItems: 'center', gap: '0.6rem' },
+  brandIcon: {
+    width: '30px', height: '30px', borderRadius: '7px',
+    background: T.amber, color: '#0d1117',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 800, fontSize: '0.9rem',
+  },
+  brandName: { fontSize: '0.95rem', fontWeight: 700, color: T.ink, letterSpacing: '-0.01em' },
+  secureTag: {
+    display: 'flex', alignItems: 'center', gap: '0.35rem',
+    fontSize: '0.72rem', fontWeight: 600, color: T.green,
+    background: T.greenLight, border: `1px solid ${T.greenBorder}`,
+    borderRadius: '999px', padding: '0.2rem 0.65rem',
+  },
+
+  body: {
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem 1rem',
   },
   card: {
-    background: '#fff', border: '1px solid #e5e7eb', borderRadius: '14px',
-    padding: '2rem 1.75rem', width: '100%', maxWidth: '400px',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.85rem',
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '16px', padding: '2.25rem 2rem',
+    width: '100%', maxWidth: '420px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem',
+    boxShadow: T.shadowPop,
   },
-  lockIcon: { fontSize: '2rem' },
-  title: { margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#1f2328', textAlign: 'center' },
-  sub: { margin: 0, color: '#57606a', fontSize: '0.85rem', textAlign: 'center' },
-  centered: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 0' },
+
+  shieldWrap: {
+    width: '56px', height: '56px', borderRadius: '14px',
+    background: T.amberLight, border: `1px solid ${T.amberBorder}`,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  title: { margin: 0, fontSize: '1.2rem', fontWeight: 800, color: T.ink, textAlign: 'center', letterSpacing: '-0.02em' },
+  sub: { margin: 0, color: T.inkSub, fontSize: '0.84rem', textAlign: 'center', lineHeight: 1.55 },
+
+  centered: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem', padding: '0.75rem 0' },
   spinner: {
-    width: '26px', height: '26px',
-    border: '3px solid #e5e7eb', borderTopColor: '#3b82d4',
+    width: '28px', height: '28px',
+    border: `3px solid ${T.border}`, borderTopColor: T.amber,
     borderRadius: '50%', animation: 'spin 0.8s linear infinite',
   },
-  hint: { color: '#9ca3af', fontSize: '0.78rem', margin: 0, textAlign: 'center' },
+  hint: { color: T.inkSub, fontSize: '0.78rem', margin: 0, textAlign: 'center' },
+
   err: {
-    width: '100%', background: '#fef2f2', border: '1px solid #fecaca',
-    color: '#dc2626', borderRadius: '6px', padding: '0.6rem 0.75rem',
+    width: '100%', background: T.redLight, border: `1px solid ${T.redBorder}`,
+    color: T.red, borderRadius: T.radiusInner, padding: '0.65rem 0.85rem',
     fontSize: '0.83rem', boxSizing: 'border-box' as const, textAlign: 'center',
   },
-  sectionLabel: {
-    margin: '0.25rem 0 0', alignSelf: 'flex-start',
-    color: '#57606a', fontSize: '0.8rem', fontWeight: 600,
+
+  infoBox: {
+    width: '100%', display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
+    padding: '0.7rem 0.85rem', background: T.amberLight,
+    border: `1px solid ${T.amberBorder}`, borderRadius: T.radiusInner,
+    fontSize: '0.77rem', color: T.amber, lineHeight: 1.5, boxSizing: 'border-box' as const,
   },
-  methodList: { width: '100%', display: 'flex', flexDirection: 'column', gap: '0.4rem' },
-  methodRow: {
-    display: 'flex', alignItems: 'center', gap: '0.75rem',
-    padding: '0.75rem 1rem', background: '#f7f8fa',
-    border: '1px solid #e5e7eb', borderRadius: '10px',
-  },
-  methodIcon: { fontSize: '1.4rem', flexShrink: 0 },
-  methodText: { display: 'flex', flexDirection: 'column', gap: '0.1rem' },
-  methodLabel: { fontWeight: 600, fontSize: '0.88rem', color: '#1f2328' },
-  methodDesc: { fontSize: '0.74rem', color: '#57606a' },
+
   primaryBtn: {
-    width: '100%', padding: '0.75rem', background: '#3b82d4', color: '#fff',
-    border: 'none', borderRadius: '8px', cursor: 'pointer',
-    fontWeight: 600, fontSize: '0.95rem',
+    width: '100%', padding: '0.8rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: T.radiusBtn, cursor: 'pointer',
+    fontWeight: 700, fontSize: '0.92rem', fontFamily: T.fontFamily,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
   },
   cancelBtn: {
-    background: 'transparent', border: 'none', color: '#9ca3af',
-    cursor: 'pointer', fontSize: '0.78rem', marginTop: '0.1rem',
+    background: 'transparent', border: 'none', color: T.inkSub,
+    cursor: 'pointer', fontSize: '0.8rem', fontFamily: T.fontFamily,
+    marginTop: '-0.25rem',
+  },
+  footer: {
+    display: 'flex', alignItems: 'center', gap: '0.35rem',
+    fontSize: '0.68rem', color: T.inkLight, marginTop: '-0.25rem',
   },
 }

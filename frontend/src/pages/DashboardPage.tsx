@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import { T } from '../styles/theme'
 
 interface Account {
   id: number; type: string; account_number: string; balance: number; currency: string
@@ -29,47 +30,29 @@ interface ManagerSummary {
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const CARD_COLORS = ['#1a2e2a', '#2d5044', '#3b7a5a', '#4ade80']
-const BAR_COLORS  = ['#b2d8c8','#b2d8c8','#b2d8c8','#b2d8c8','#1a2e2a','#b2d8c8','#b2d8c8']
+const CAT_COLORS = [T.green, T.amber, T.blue, '#e09433', '#7c5cd8', '#f85149']
 
-// ── Credit card visual ────────────────────────────────────────────────────────
-function BankCard({ account, active }: { account: Account; active: boolean }) {
-  const bg = active ? 'linear-gradient(135deg, #1a2e2a 0%, #2d5044 100%)' : 'linear-gradient(135deg, #2d5044 0%, #3b7a5a 100%)'
-  const balance = Math.abs(account.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })
-  const masked = `•••• •••• •••• ${account.account_number.slice(-4)}`
-  return (
-    <div style={{ ...s.bankCard, background: bg }}>
-      <div style={s.cardTopRow}>
-        <span style={s.cardBrand}>MockBank</span>
-        <span style={s.cardType}>{account.type.charAt(0).toUpperCase() + account.type.slice(1)}</span>
-      </div>
-      <div style={s.cardNumber}>{masked}</div>
-      <div style={s.cardBottomRow}>
-        <div>
-          <div style={s.cardLabel}>Balance</div>
-          <div style={s.cardBalanceAmt}>${balance}</div>
-        </div>
-        <div style={s.cardChip}>
-          <div style={s.chipInner} />
-        </div>
-      </div>
-    </div>
-  )
+function ArrowUpIcon({ size = 12 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+}
+function ArrowDownIcon({ size = 12 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
 }
 
-// ── Customer Dashboard ────────────────────────────────────────────────────────
+// ── Customer Dashboard ─────────────────────────────────────────────────────────
 function CustomerDashboard() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
   const [accounts, setAccounts]         = useState<Account[]>([])
   const [summary, setSummary]           = useState<Summary | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [activeCard, setActiveCard]     = useState(0)
   const [loading, setLoading]           = useState(true)
 
   useEffect(() => {
     Promise.all([
       api.get<Account[]>('/banking/accounts'),
       api.get<Summary>('/banking/summary'),
-      api.get<Transaction[]>('/banking/transactions?limit=6'),
+      api.get<Transaction[]>('/banking/transactions?limit=5'),
     ])
       .then(([a, s, t]) => { setAccounts(a.data); setSummary(s.data); setTransactions(t.data) })
       .finally(() => setLoading(false))
@@ -77,228 +60,197 @@ function CustomerDashboard() {
 
   if (loading) return <div style={s.loading}>Loading…</div>
 
-  const activeAccount = accounts[activeCard]
+  const firstName = user?.name?.split(' ')[0] ?? 'there'
   const totalAssets   = summary?.total_assets ?? 0
   const totalExpenses = Math.abs(summary?.total_credit ?? 0)
+  const netWorth = totalAssets - totalExpenses
 
-  // Build monthly bar data from balance_trend (group by month)
-  const monthlyBars = MONTHS.slice(0, 7).map((m, i) => ({
-    month: m,
-    value: summary?.balance_trend
-      ? Math.round((summary.balance_trend[Math.min(i * 4, summary.balance_trend.length - 1)]?.balance ?? 0))
-      : 0,
+  const trendData = (summary?.balance_trend ?? []).slice(-10).map((d, i) => ({
+    name: MONTHS[i % 12],
+    value: Math.round(d.balance),
   }))
 
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+
   return (
-    <div style={s.page}>
-      {/* ── Left + Middle ── */}
-      <div style={s.leftCol}>
-
-        {/* Card Overview */}
-        <div style={s.panel}>
-          <div style={s.panelHeader}>
-            <div>
-              <div style={s.panelTitle}>Card Overview</div>
-              <div style={s.panelSub}>Track your balances and recent transactions</div>
-            </div>
-          </div>
-
-          {/* Card selector tabs */}
-          <div style={s.cardTabs}>
-            {accounts.map((a, i) => (
-              <button key={a.id} style={{ ...s.cardTab, ...(i === activeCard ? s.cardTabActive : {}) }}
-                onClick={() => setActiveCard(i)}>
-                {a.type.charAt(0).toUpperCase() + a.type.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          <div style={s.cardOverviewRow}>
-            {/* Balance box */}
-            <div style={s.balanceBox}>
-              <div style={s.balanceLabel}>Main Balance</div>
-              <div style={s.balanceDate}>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-              <div style={s.balanceAmount}>
-                ${activeAccount ? Math.abs(activeAccount.balance).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}
-              </div>
-              <div style={s.balanceChange}>
-                <span style={{ color: '#10b981' }}>↑ +5.2%</span>
-                <span style={{ color: '#9ca3af', marginLeft: '0.4rem' }}>from last month</span>
-              </div>
-            </div>
-
-            {/* Card visual */}
-            {activeAccount && <BankCard account={activeAccount} active />}
-          </div>
-
-          {/* Net worth row */}
-          <div style={s.netWorthRow}>
-            <div style={s.netWorthBox}>
-              <div style={s.netWorthLabel}>Current Net Worth</div>
-              <div style={s.netWorthValue}>
-                ${(totalAssets - totalExpenses).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-              </div>
-              <div style={s.netWorthSub}>Amount <span style={{ color: '#10b981', marginLeft: '0.5rem' }}>+10%</span></div>
-            </div>
-            <div style={s.spendBox}>
-              <div style={s.spendTitle}>Spending Overview</div>
-              <ResponsiveContainer width="100%" height={80}>
-                <BarChart data={monthlyBars} barSize={14}>
-                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, 'Balance']} />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                    {monthlyBars.map((_, i) => <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+    <div>
+      {/* ── Page header ── */}
+      <div style={s.pageHeader}>
+        <div>
+          <div style={s.pageGreeting}>{greeting}, {firstName}</div>
+          <h1 style={s.pageTitle}>Overview</h1>
         </div>
-
-        {/* Recent Transfer Activity */}
-        <div style={s.panel}>
-          <div style={s.panelHeaderRow}>
-            <div style={s.panelTitle}>Recent Transfer Activity</div>
-            <Link to="/transactions" style={s.viewAllLink}>View Full Transaction History ↗</Link>
-          </div>
-
-          <table style={s.table}>
-            <thead>
-              <tr>
-                {['Date & Time', 'Description', 'Account', 'Amount', ''].map(h => (
-                  <th key={h} style={s.th}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map(tx => {
-                const acct = accounts.find(a => a.id === tx.account_id)
-                return (
-                  <tr key={tx.id} style={s.tr}>
-                    <td style={s.td}>
-                      <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#1f2328' }}>
-                        {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
-                        {new Date(tx.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </td>
-                    <td style={s.td}>
-                      <div style={s.txAvatar}>{tx.merchant.charAt(0)}</div>
-                      <div>
-                        <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{tx.category}</div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 500, color: '#1f2328' }}>{tx.merchant}</div>
-                      </div>
-                    </td>
-                    <td style={s.td}>
-                      <div style={{ fontSize: '0.82rem', color: '#1f2328' }}>
-                        {acct ? acct.type.charAt(0).toUpperCase() + acct.type.slice(1) : '—'}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
-                        (••••{acct?.account_number.slice(-4) ?? '——'})
-                      </div>
-                    </td>
-                    <td style={{ ...s.td, fontWeight: 600, color: tx.type === 'credit' ? '#10b981' : '#1f2328' }}>
-                      {tx.type === 'credit' ? '+' : '-'}${tx.amount.toFixed(2)}
-                    </td>
-                    <td style={s.td}>
-                      <button style={s.dotBtn}>···</button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div style={s.headerActions}>
+          <button style={s.btnPrimary} onClick={() => navigate('/transfers')}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            New transfer
+          </button>
+          <button style={s.btnSecondary}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add money
+          </button>
         </div>
       </div>
 
-      {/* ── Right col ── */}
-      <div style={s.rightCol}>
-
-        {/* Income */}
-        <div style={s.statPanel}>
-          <div>
-            <div style={s.statPanelLabel}>Total Income</div>
-            <div style={s.statPanelValue}>${totalAssets.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-          </div>
-          <div style={{ textAlign: 'right' as const }}>
-            <span style={s.pillGreen}>+8.5%</span>
-            <div style={s.statPanelSub}>Last Month</div>
-          </div>
-          <div style={{ position: 'absolute' as const, bottom: '0.85rem', left: '1rem', fontSize: '0.9rem' }}>↑</div>
-        </div>
-
-        {/* Expenses */}
-        <div style={s.statPanel}>
-          <div>
-            <div style={s.statPanelLabel}>Total Expenses</div>
-            <div style={{ ...s.statPanelValue, color: '#ef4444' }}>
-              ${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+      {/* ── Top row ── */}
+      <div style={s.topGrid}>
+        {/* Net worth chart card */}
+        <div style={s.chartCard}>
+          <div style={s.chartCardTop}>
+            <div>
+              <div style={s.chartCardLabel}>TOTAL NET WORTH · USD</div>
+              <div style={s.chartCardValue}>
+                ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </div>
+              <div style={{ ...s.changePill, color: T.green, fontSize: '0.82rem', marginTop: '0.5rem' }}>
+                <ArrowUpIcon /> +4.8% MoM
+              </div>
+              <div style={s.chartCardSub}>
+                Across {accounts.length} accounts · Updated moments ago
+              </div>
             </div>
           </div>
-          <div style={{ textAlign: 'right' as const }}>
-            <span style={s.pillRed}>-4.2%</span>
-            <div style={s.statPanelSub}>Last Month</div>
-          </div>
-          <div style={{ position: 'absolute' as const, bottom: '0.85rem', left: '1rem', fontSize: '0.9rem', color: '#ef4444' }}>↓</div>
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart data={trendData} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
+              <defs>
+                <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={T.amber} stopOpacity={0.25}/>
+                  <stop offset="95%" stopColor={T.amber} stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.inkSub }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: T.inkSub }} axisLine={false} tickLine={false}
+                tickFormatter={(v: number) => `$${(v/1000).toFixed(0)}k`} width={45} />
+              <Tooltip
+                contentStyle={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.ink }}
+                formatter={(v: number) => [`$${v.toLocaleString()}`, 'Balance']}
+              />
+              <Area type="monotone" dataKey="value" stroke={T.amber} strokeWidth={2}
+                fill="url(#netGrad)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
 
-        {/* Quick Actions — Customer */}
-        <div style={s.panel}>
-          <div style={s.panelHeaderRow}>
-            <div style={s.panelTitle}>Quick Actions</div>
+        {/* Spending card */}
+        <div style={s.spendCard}>
+          <div style={s.spendHeader}>
+            <div>
+              <div style={s.spendLabel}>SPENDING THIS MONTH</div>
+              <div style={s.spendValue}>
+                ${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </div>
+              <div style={s.spendBudget}>Budget $5,000.00 · {Math.round((totalExpenses / 5000) * 100)}% used</div>
+            </div>
+            <span style={{ ...s.onTrackPill, background: totalExpenses < 4500 ? T.greenLight : T.orangeLight, color: totalExpenses < 4500 ? T.green : T.orange }}>
+              {totalExpenses < 4500 ? '✓ On track' : '⚠ Near limit'}
+            </span>
           </div>
+          {/* Progress bar */}
+          <div style={s.progressBg}>
+            <div style={{ ...s.progressFill, width: `${Math.min((totalExpenses / 5000) * 100, 100)}%`, background: totalExpenses < 4500 ? T.amber : T.red }} />
+          </div>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={(summary?.spending_by_category ?? []).slice(0, 6)} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
+              <XAxis dataKey="category" tick={{ fontSize: 10, fill: T.inkSub }} axisLine={false} tickLine={false}
+                tickFormatter={(v: string) => v.split(' ')[0]} />
+              <YAxis tick={{ fontSize: 10, fill: T.inkSub }} axisLine={false} tickLine={false}
+                tickFormatter={(v: number) => `$${v.toFixed(0)}`} width={45} />
+              <Tooltip
+                contentStyle={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.ink }}
+                formatter={(v: number) => [`$${v.toFixed(2)}`]}
+              />
+              <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                {(summary?.spending_by_category ?? []).slice(0, 6).map((_, i) => (
+                  <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-          <div style={s.quickTransferGrid}>
-            {[
-              { label: 'Transfer', icon: '↔' },
-              { label: 'Top Up',   icon: '＋' },
-              { label: 'Pay Bills',icon: '📄' },
-              { label: 'Others',   icon: '···' },
-            ].map(item => (
-              <div key={item.label} style={s.quickIcon}>
-                <div style={s.quickIconCircle}>{item.icon}</div>
-                <div style={s.quickIconLabel}>{item.label}</div>
+      {/* ── Your accounts ── */}
+      <div style={s.sectionHeader}>
+        <div style={s.sectionTitle}>Your accounts</div>
+        <button style={s.exportBtn}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export CSV
+        </button>
+      </div>
+      <div style={s.accountsGrid}>
+        {accounts.map((a, i) => {
+          const isNeg = a.balance < 0
+          return (
+            <div key={a.id} style={{ ...s.accountCard, borderColor: isNeg ? T.redBorder : T.border }}>
+              <div style={s.accountCardTop}>
+                <div>
+                  <div style={s.accountType}>{a.type.charAt(0).toUpperCase() + a.type.slice(1)}</div>
+                  <div style={s.accountNum}>•• {a.account_number.slice(-4)}</div>
+                </div>
+                <span style={{ color: isNeg ? T.red : T.green, fontSize: '0.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                  {isNeg ? <ArrowDownIcon /> : <ArrowUpIcon />}
+                  {isNeg ? '-0.3%' : `+${(1.4 + i * 1.2).toFixed(1)}%`}
+                </span>
+              </div>
+              <div style={s.accountBalance}>
+                {isNeg ? '-' : ''}${Math.abs(a.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </div>
+              <div style={s.accountCurrency}>{a.currency ?? 'USD'}</div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ── Bottom row ── */}
+      <div style={s.bottomGrid}>
+        {/* Recent activity */}
+        <div style={s.activityCard}>
+          <div style={s.activityHeader}>
+            <div style={s.sectionTitle}>Recent activity</div>
+            <Link to="/transactions" style={s.viewAllLink}>View all</Link>
+          </div>
+          {transactions.map((tx, idx) => {
+            const isCredit = tx.type === 'credit'
+            return (
+              <div key={tx.id} style={{ ...s.activityRow, borderBottom: idx < transactions.length - 1 ? `1px solid ${T.borderLight}` : 'none' }}>
+                <div style={{ ...s.activityIcon, background: isCredit ? T.greenLight : T.bgMuted }}>
+                  {isCredit ? <ArrowDownIcon /> : <ArrowUpIcon />}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={s.activityMerchant}>{tx.merchant}</div>
+                  <div style={s.activityCat}>{tx.category}</div>
+                </div>
+                <div>
+                  <div style={{ ...s.activityAmt, color: isCredit ? T.green : T.ink }}>
+                    {isCredit ? '+' : '-'}${tx.amount.toFixed(2)}
+                  </div>
+                  <div style={s.activityDate}>
+                    {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Quick pay */}
+        <div style={s.quickPayCard}>
+          <div style={s.sectionTitle}>Quick pay</div>
+          <div style={s.quickPaySub}>Send to a saved account in seconds.</div>
+          <div style={s.quickPayGrid}>
+            {accounts.map(a => (
+              <div key={a.id} style={s.quickPayItem} onClick={() => navigate('/transfers')}>
+                <div style={s.quickPayAvatar}>{a.type.charAt(0).toUpperCase()}</div>
+                <div style={s.quickPayAcctName}>{a.type.charAt(0).toUpperCase() + a.type.slice(1)}</div>
+                <div style={s.quickPayAcctNum}>•• {a.account_number.slice(-4)}</div>
               </div>
             ))}
           </div>
-
-          <div style={{ marginTop: '1rem' }}>
-            <div style={s.sectionLabel}>My Accounts</div>
-            <div style={s.recentAccounts}>
-              {accounts.map(a => (
-                <div key={a.id} style={s.recentAcctAvatar} title={a.type}>
-                  {a.type.charAt(0).toUpperCase()}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <Link to="/transfers">
-            <button style={s.transferBtn}>Transfer Funds</button>
-          </Link>
-        </div>
-
-        {/* Spending by category */}
-        <div style={s.panel}>
-          <div style={s.panelTitle}>Spending by Category</div>
-          <div style={{ marginTop: '0.75rem' }}>
-            {(summary?.spending_by_category ?? []).slice(0, 5).map((c, i) => {
-              const max = Math.max(...(summary?.spending_by_category ?? []).map(x => x.total), 1)
-              const pct = Math.round((c.total / max) * 100)
-              return (
-                <div key={c.category} style={s.catRow}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                    <span style={{ fontSize: '0.78rem', color: '#1f2328', fontWeight: 500 }}>{c.category}</span>
-                    <span style={{ fontSize: '0.78rem', color: '#57606a' }}>${c.total.toFixed(0)}</span>
-                  </div>
-                  <div style={s.catBarBg}>
-                    <div style={{ ...s.catBarFill, width: `${pct}%`, background: CARD_COLORS[i % CARD_COLORS.length] }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <button style={s.transferBigBtn} onClick={() => navigate('/transfers')}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            New transfer
+          </button>
         </div>
       </div>
     </div>
@@ -320,102 +272,74 @@ function ManagerDashboard({ isAdmin }: { isAdmin: boolean }) {
   if (loading || !data) return <div style={s.loading}>Loading…</div>
 
   return (
-    <div style={s.page}>
-      <div style={s.leftCol}>
-        {/* KPI cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.25rem' }}>
-          {[
-            { label: 'Active Customers', value: data.total_customers, sub: `+${data.new_customers_30d} this month`, color: '#1a2e2a' },
-            { label: 'Transaction Volume', value: `$${(data.transaction_volume_30d/1000).toFixed(1)}k`, sub: `${data.transaction_count_30d} transactions`, color: '#1a2e2a' },
-            { label: 'Total Assets', value: `$${(data.total_assets/1000).toFixed(1)}k`, sub: 'all customer balances', color: '#1a2e2a' },
-          ].map(k => (
-            <div key={k.label} style={s.kpiCard}>
-              <div style={s.kpiLabel}>{k.label}</div>
-              <div style={s.kpiValue}>{k.value}</div>
-              <div style={s.kpiSub}>{k.sub}</div>
-            </div>
-          ))}
+    <div>
+      <div style={s.pageHeader}>
+        <div>
+          <div style={s.pageGreeting}>{isAdmin ? 'Administrator' : 'Manager'}</div>
+          <h1 style={s.pageTitle}>Overview</h1>
         </div>
-
-        {/* Top categories bar */}
-        <div style={s.panel}>
-          <div style={s.panelTitle}>Top Spending Categories — Last 90 Days</div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data.top_categories} layout="vertical" margin={{ left: 10 }}>
-              <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${(v/1000).toFixed(1)}k`} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="category" tick={{ fontSize: 11 }} width={100} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v: number) => [`$${v.toFixed(2)}`]} />
-              <Bar dataKey="total" fill="#1a2e2a" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Recent transactions */}
-        <div style={{ ...s.panel, marginTop: '1rem' }}>
-          <div style={s.panelHeaderRow}>
-            <div style={s.panelTitle}>Recent Customer Transactions</div>
-            <button style={s.viewAllLink} onClick={() => navigate('/all-transactions')}>View all ↗</button>
-          </div>
-          <table style={s.table}>
-            <thead><tr>
-              {['Date', 'Customer', 'Merchant', 'Category', 'Amount'].map(h => <th key={h} style={s.th}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {data.recent_transactions.map(tx => (
-                <tr key={tx.id} style={s.tr}>
-                  <td style={{ ...s.td, color: '#9ca3af', fontSize: '0.8rem' }}>{new Date(tx.date).toLocaleDateString()}</td>
-                  <td style={s.td}>{tx.user_name}</td>
-                  <td style={s.td}>{tx.merchant}</td>
-                  <td style={s.td}><span style={s.catBadge}>{tx.category}</span></td>
-                  <td style={{ ...s.td, fontWeight: 600, color: tx.type === 'credit' ? '#10b981' : '#1f2328' }}>
-                    {tx.type === 'credit' ? '+' : '-'}${tx.amount.toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Right col */}
-      <div style={s.rightCol}>
-        <div style={s.statPanel}>
-          <div>
-            <div style={s.statPanelLabel}>Active Customers</div>
-            <div style={s.statPanelValue}>{data.total_customers}</div>
-          </div>
-          <div style={{ textAlign: 'right' as const }}>
-            <span style={s.pillGreen}>+{data.new_customers_30d}</span>
-            <div style={s.statPanelSub}>This Month</div>
-          </div>
-        </div>
-
-        <div style={s.statPanel}>
-          <div>
-            <div style={s.statPanelLabel}>Offboarded</div>
-            <div style={{ ...s.statPanelValue, color: data.offboarded_customers > 0 ? '#f59e0b' : '#10b981' }}>
-              {data.offboarded_customers}
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' as const }}>
-            <div style={s.statPanelSub}>Total</div>
-          </div>
-        </div>
-
         {isAdmin && (
-          <div style={s.panel}>
-            <div style={s.panelTitle}>Identity Management</div>
-            <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column' as const, gap: '0.5rem' }}>
-              <button style={s.transferBtn} onClick={() => navigate('/admin/users')}>
-                Manage Users (JML)
-              </button>
-              <button style={{ ...s.transferBtn, background: '#f5f6fa', color: '#1a2e2a', border: '1px solid #e5e7eb' }}
-                onClick={() => navigate('/all-transactions')}>
-                All Customer Transactions
-              </button>
-            </div>
+          <div style={s.headerActions}>
+            <button style={s.btnPrimary} onClick={() => navigate('/admin/users')}>Manage Users</button>
+            <button style={s.btnSecondary} onClick={() => navigate('/all-transactions')}>All Transactions</button>
           </div>
         )}
+      </div>
+
+      {/* KPI strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+        {[
+          { label: 'ACTIVE CUSTOMERS', value: data.total_customers, sub: `+${data.new_customers_30d} this month`, up: true },
+          { label: 'TRANSACTION VOLUME', value: `$${(data.transaction_volume_30d/1000).toFixed(1)}k`, sub: `${data.transaction_count_30d} transactions`, up: true },
+          { label: 'TOTAL ASSETS', value: `$${(data.total_assets/1000).toFixed(1)}k`, sub: 'all customer balances', up: true },
+        ].map(k => (
+          <div key={k.label} style={s.kpiCard}>
+            <div style={s.kpiLabel}>{k.label}</div>
+            <div style={s.kpiValue}>{k.value}</div>
+            <div style={s.kpiSub}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Spending categories */}
+      <div style={s.chartCard}>
+        <div style={s.panelTitle}>Top Spending Categories — Last 90 Days</div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={data.top_categories} layout="vertical" margin={{ left: 0 }}>
+            <XAxis type="number" tick={{ fontSize: 10, fill: T.ink }} tickFormatter={(v: number) => `$${(v/1000).toFixed(1)}k`} axisLine={false} tickLine={false} />
+            <YAxis type="category" dataKey="category" tick={{ fontSize: 11, fill: T.ink }} width={110} axisLine={false} tickLine={false} />
+            <Tooltip contentStyle={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.ink }} formatter={(v: number) => [`$${v.toFixed(2)}`]} />
+            <Bar dataKey="total" radius={[0, 6, 6, 0]}>
+              {data.top_categories.map((_, i) => <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Recent transactions */}
+      <div style={{ ...s.activityCard, marginTop: '1rem' }}>
+        <div style={s.activityHeader}>
+          <div style={s.sectionTitle}>Recent Customer Transactions</div>
+          <button style={s.viewAllLink} onClick={() => navigate('/all-transactions')}>View all</button>
+        </div>
+        <table style={s.table}>
+          <thead><tr>
+            {['Date', 'Customer', 'Merchant', 'Category', 'Amount'].map(h => <th key={h} style={s.th}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {data.recent_transactions.map((tx, idx) => (
+              <tr key={tx.id} style={{ background: idx % 2 === 0 ? 'transparent' : T.bgMuted + '40' }}>
+                <td style={{ ...s.td, color: T.inkSub }}>{new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                <td style={s.td}>{tx.user_name}</td>
+                <td style={s.td}>{tx.merchant}</td>
+                <td style={s.td}><span style={s.catTag}>{tx.category}</span></td>
+                <td style={{ ...s.td, fontWeight: 700, color: tx.type === 'credit' ? T.green : T.ink }}>
+                  {tx.type === 'credit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -429,128 +353,131 @@ export default function DashboardPage() {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  loading: { padding: '3rem 2rem', color: '#57606a', fontSize: '0.9rem' },
-  page: { display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.25rem', alignItems: 'start' },
-  leftCol: { display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0 },
-  rightCol: { display: 'flex', flexDirection: 'column', gap: '1rem' },
+  loading: { padding: '3rem', color: T.inkSub, fontSize: '0.9rem' },
 
-  panel: {
-    background: '#fff', borderRadius: '14px', border: '1px solid #e5e7eb',
-    padding: '1.25rem 1.5rem',
+  pageHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1.5rem' },
+  pageGreeting: { fontSize: '0.82rem', color: T.inkSub, marginBottom: '0.2rem' },
+  pageTitle: { fontSize: '2rem', fontWeight: 800, color: T.ink, margin: 0, letterSpacing: '-0.03em' },
+  headerActions: { display: 'flex', gap: '0.6rem' },
+  btnPrimary: {
+    display: 'flex', alignItems: 'center', gap: '0.4rem',
+    padding: '0.6rem 1.1rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem',
   },
-  panelHeader: { marginBottom: '1rem' },
-  panelHeaderRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' },
-  panelTitle: { fontSize: '1rem', fontWeight: 700, color: '#1a2e2a' },
-  panelSub: { fontSize: '0.78rem', color: '#9ca3af', marginTop: '0.1rem' },
+  btnSecondary: {
+    display: 'flex', alignItems: 'center', gap: '0.4rem',
+    padding: '0.6rem 1.1rem', background: T.bgCard, color: T.ink,
+    border: `1px solid ${T.border}`, borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+  },
 
-  cardTabs: { display: 'flex', gap: '0.5rem', marginBottom: '1rem' },
-  cardTab: {
-    padding: '0.3rem 0.75rem', borderRadius: '999px', border: '1px solid #e5e7eb',
-    background: '#f5f6fa', color: '#57606a', fontSize: '0.78rem', cursor: 'pointer', fontWeight: 500,
-  },
-  cardTabActive: { background: '#1a2e2a', color: '#fff', border: '1px solid #1a2e2a' },
+  topGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' },
 
-  cardOverviewRow: { display: 'flex', gap: '1.25rem', alignItems: 'flex-start', marginBottom: '1rem' },
-  balanceBox: { flex: 1 },
-  balanceLabel: { fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500 },
-  balanceDate: { fontSize: '0.72rem', color: '#9ca3af', marginBottom: '0.4rem' },
-  balanceAmount: { fontSize: '2rem', fontWeight: 800, color: '#1a2e2a', letterSpacing: '-0.02em' },
-  balanceChange: { fontSize: '0.78rem', marginTop: '0.3rem' },
+  chartCard: {
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '12px', padding: '1.5rem', boxShadow: T.shadowCard,
+  },
+  chartCardTop: { marginBottom: '0.75rem' },
+  chartCardLabel: { fontSize: '0.68rem', fontWeight: 700, color: T.inkSub, letterSpacing: '0.1em', marginBottom: '0.3rem' },
+  chartCardValue: { fontSize: '2.4rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.04em', lineHeight: 1.1 },
+  chartCardSub: { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.35rem' },
+  changePill: { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontWeight: 700 },
 
-  bankCard: {
-    width: '200px', minWidth: '200px', height: '120px', borderRadius: '14px',
-    padding: '1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-    color: '#fff', flexShrink: 0,
+  spendCard: {
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '12px', padding: '1.5rem', boxShadow: T.shadowCard,
   },
-  cardTopRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  cardBrand: { fontSize: '0.82rem', fontWeight: 700, letterSpacing: '-0.01em' },
-  cardType: { fontSize: '0.68rem', opacity: 0.7, textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
-  cardNumber: { fontSize: '0.8rem', letterSpacing: '0.18em', opacity: 0.85, fontFamily: 'monospace' },
-  cardBottomRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' },
-  cardLabel: { fontSize: '0.6rem', opacity: 0.7, marginBottom: '0.1rem', textTransform: 'uppercase' as const },
-  cardBalanceAmt: { fontSize: '0.9rem', fontWeight: 700 },
-  cardChip: {
-    width: '28px', height: '20px', borderRadius: '4px', background: 'rgba(255,255,255,0.3)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  spendHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' },
+  spendLabel: { fontSize: '0.68rem', fontWeight: 700, color: T.inkSub, letterSpacing: '0.1em', marginBottom: '0.3rem' },
+  spendValue: { fontSize: '2rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.03em', lineHeight: 1.1 },
+  spendBudget: { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.3rem' },
+  onTrackPill: {
+    fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.6rem',
+    borderRadius: '999px', flexShrink: 0,
   },
-  chipInner: { width: '18px', height: '12px', borderRadius: '2px', background: 'rgba(255,255,255,0.5)' },
+  progressBg: { height: '4px', background: T.bgMuted, borderRadius: '99px', marginBottom: '1rem', overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: '99px', transition: 'width 0.5s' },
 
-  netWorthRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', borderTop: '1px solid #f3f4f6', paddingTop: '1rem' },
-  netWorthBox: {},
-  netWorthLabel: { fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500 },
-  netWorthValue: { fontSize: '1.5rem', fontWeight: 800, color: '#1a2e2a', letterSpacing: '-0.02em', marginTop: '0.2rem' },
-  netWorthSub: { fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.2rem' },
-  spendBox: {},
-  spendTitle: { fontSize: '0.78rem', color: '#9ca3af', fontWeight: 500, marginBottom: '0.25rem' },
+  sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' },
+  sectionTitle: { fontSize: '1rem', fontWeight: 700, color: T.ink, letterSpacing: '-0.01em' },
+  exportBtn: {
+    display: 'flex', alignItems: 'center', gap: '0.35rem',
+    padding: '0.4rem 0.75rem', background: 'transparent', border: `1px solid ${T.border}`,
+    borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', color: T.inkSub, fontWeight: 600,
+  },
 
-  table: { width: '100%', borderCollapse: 'collapse' as const },
-  th: { padding: '0.5rem 0.75rem', fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', textAlign: 'left' as const, borderBottom: '1px solid #f3f4f6' },
-  tr: { borderBottom: '1px solid #f9fafb' },
-  td: { padding: '0.75rem 0.75rem', fontSize: '0.875rem', color: '#1f2328', display: 'table-cell', verticalAlign: 'middle' as const },
-  txAvatar: {
-    display: 'inline-flex', width: '30px', height: '30px', borderRadius: '50%',
-    background: '#1a2e2a', color: '#fff', fontSize: '0.8rem', fontWeight: 700,
-    alignItems: 'center', justifyContent: 'center', marginRight: '0.6rem', flexShrink: 0,
+  accountsGrid: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+    gap: '1rem', marginBottom: '1.5rem',
   },
-  dotBtn: {
-    background: 'none', border: '1px solid #e5e7eb', borderRadius: '6px',
-    padding: '0.2rem 0.5rem', cursor: 'pointer', color: '#9ca3af', fontSize: '0.75rem',
+  accountCard: {
+    background: T.bgCard, border: `1px solid`, borderRadius: '12px',
+    padding: '1.25rem', boxShadow: T.shadowCard, cursor: 'pointer',
   },
+  accountCardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' },
+  accountType: { fontSize: '0.88rem', fontWeight: 600, color: T.ink },
+  accountNum: { fontSize: '0.72rem', color: T.inkSub, marginTop: '0.1rem' },
+  accountBalance: { fontSize: '1.6rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: '0.2rem' },
+  accountCurrency: { fontSize: '0.72rem', color: T.inkSub, fontWeight: 600 },
+
+  bottomGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' },
+
+  activityCard: {
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '12px', padding: '1.25rem 1.5rem', boxShadow: T.shadowCard,
+  },
+  activityHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' },
+  activityRow: { display: 'flex', alignItems: 'center', gap: '0.85rem', padding: '0.7rem 0' },
+  activityIcon: {
+    width: '34px', height: '34px', borderRadius: '8px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: T.ink,
+  },
+  activityMerchant: { fontSize: '0.85rem', fontWeight: 600, color: T.ink },
+  activityCat: { fontSize: '0.72rem', color: T.inkSub, marginTop: '0.1rem' },
+  activityAmt: { fontSize: '0.88rem', fontWeight: 700, textAlign: 'right' as const },
+  activityDate: { fontSize: '0.7rem', color: T.inkSub, textAlign: 'right' as const, marginTop: '0.1rem' },
   viewAllLink: {
-    fontSize: '0.8rem', color: '#1a2e2a', textDecoration: 'none',
+    fontSize: '0.8rem', color: T.amber, textDecoration: 'none',
     background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600,
   },
 
-  statPanel: {
-    background: '#fff', borderRadius: '14px', border: '1px solid #e5e7eb',
-    padding: '1.1rem 1.25rem', display: 'flex', justifyContent: 'space-between',
-    alignItems: 'center', position: 'relative' as const,
+  quickPayCard: {
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '12px', padding: '1.25rem 1.5rem', boxShadow: T.shadowCard,
   },
-  statPanelLabel: { fontSize: '0.8rem', color: '#9ca3af', marginBottom: '0.25rem' },
-  statPanelValue: { fontSize: '1.6rem', fontWeight: 800, color: '#1a2e2a', letterSpacing: '-0.02em' },
-  statPanelSub: { fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.25rem' },
-  pillGreen: {
-    display: 'inline-block', background: '#dcfce7', color: '#16a34a',
-    fontSize: '0.7rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: '999px',
+  quickPaySub: { fontSize: '0.78rem', color: T.inkSub, marginTop: '0.2rem', marginBottom: '1.25rem' },
+  quickPayGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '0.6rem', marginBottom: '1.25rem' },
+  quickPayItem: {
+    background: T.bgMuted, border: `1px solid ${T.border}`,
+    borderRadius: '10px', padding: '0.85rem 0.5rem', cursor: 'pointer',
+    display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '0.4rem',
   },
-  pillRed: {
-    display: 'inline-block', background: '#fef2f2', color: '#dc2626',
-    fontSize: '0.7rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: '999px',
-  },
-
-  quickTransferGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', marginTop: '0.75rem' },
-  quickIcon: { display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: '0.3rem' },
-  quickIconCircle: {
-    width: '42px', height: '42px', borderRadius: '50%', background: '#f5f6fa',
-    border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '1rem', cursor: 'pointer',
-  },
-  quickIconLabel: { fontSize: '0.68rem', color: '#57606a', textAlign: 'center' as const },
-  sectionLabel: { fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', marginBottom: '0.5rem' },
-  recentAccounts: { display: 'flex', gap: '0.4rem' },
-  recentAcctAvatar: {
-    width: '36px', height: '36px', borderRadius: '50%', background: '#1a2e2a', color: '#fff',
+  quickPayAvatar: {
+    width: '32px', height: '32px', borderRadius: '50%',
+    background: T.bgHighlight, border: `1px solid ${T.border}`,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer',
+    fontSize: '0.85rem', fontWeight: 700, color: T.ink,
   },
-  transferBtn: {
-    width: '100%', marginTop: '1rem', padding: '0.7rem', background: '#1a2e2a', color: '#fff',
-    border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem',
+  quickPayAcctName: { fontSize: '0.72rem', fontWeight: 600, color: T.ink, textAlign: 'center' as const },
+  quickPayAcctNum: { fontSize: '0.65rem', color: T.inkSub },
+
+  transferBigBtn: {
+    width: '100%', padding: '0.7rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.88rem',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
   },
 
-  catRow: { marginBottom: '0.6rem' },
-  catBarBg: { height: '6px', background: '#f3f4f6', borderRadius: '999px', overflow: 'hidden' },
-  catBarFill: { height: '100%', borderRadius: '999px', transition: 'width 0.3s' },
-  catBadge: {
-    background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: '999px',
-    padding: '0.15rem 0.5rem', fontSize: '0.72rem', color: '#57606a',
-  },
+  panelTitle: { fontSize: '0.9rem', fontWeight: 700, color: T.ink, marginBottom: '1rem', letterSpacing: '-0.01em' },
+
+  table: { width: '100%', borderCollapse: 'collapse' as const },
+  th: { padding: '0.5rem 0.75rem', fontSize: '0.68rem', fontWeight: 700, color: T.inkSub, textAlign: 'left' as const, borderBottom: `1px solid ${T.border}`, letterSpacing: '0.07em', textTransform: 'uppercase' as const },
+  td: { padding: '0.7rem 0.75rem', fontSize: '0.875rem', color: T.ink },
+  catTag: { fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.5rem', borderRadius: '6px', background: T.bgMuted, color: T.inkSub },
 
   kpiCard: {
-    background: '#fff', border: '1px solid #e5e7eb', borderRadius: '14px',
-    padding: '1.1rem 1.25rem',
+    background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '12px',
+    boxShadow: T.shadowCard, padding: '1.25rem',
   },
-  kpiLabel: { fontSize: '0.78rem', color: '#9ca3af', marginBottom: '0.3rem' },
-  kpiValue: { fontSize: '1.5rem', fontWeight: 800, color: '#1a2e2a', letterSpacing: '-0.02em' },
-  kpiSub: { fontSize: '0.72rem', color: '#10b981', marginTop: '0.2rem' },
+  kpiLabel: { fontSize: '0.65rem', color: T.inkSub, fontWeight: 700, letterSpacing: '0.1em', marginBottom: '0.4rem' },
+  kpiValue: { fontSize: '1.8rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.03em' },
+  kpiSub: { fontSize: '0.72rem', color: T.green, marginTop: '0.25rem' },
 }

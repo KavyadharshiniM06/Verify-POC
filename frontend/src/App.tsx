@@ -22,6 +22,7 @@ import TransferPage from './pages/TransferPage'
 import StepUpPage from './pages/StepUpPage'
 import StepUpCallbackPage from './pages/StepUpCallbackPage'
 import EnrollMethodPage from './pages/EnrollMethodPage'
+import CardsPage from './pages/CardsPage'
 
 /** Redirect Manager/Admin away from customer-only pages to their landing page. */
 function CustomerOnly({ children }: { children: React.ReactNode }) {
@@ -86,6 +87,10 @@ export default function App() {
           <Route
             path="/security"
             element={<ProtectedLayout><SecurityCenterPage /></ProtectedLayout>}
+          />
+          <Route
+            path="/profile"
+            element={<ProtectedLayout><CustomerOnly><CardsPage /></CustomerOnly></ProtectedLayout>}
           />
           <Route
             path="/settings"

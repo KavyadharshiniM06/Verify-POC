@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import { T } from '../styles/theme'
 
 interface EnrolledFactors {
   fido2: boolean
@@ -188,11 +189,11 @@ export default function ProfilePage() {
     {
       key: 'push',
       icon: '📱',
-      name: 'IBM Verify Push Notification',
+      name: 'Push Notification',
       description: 'Approve login from your mobile device',
       enrolled: factors?.push ?? false,
       action: null,
-      actionLabel: 'Requires IBM Verify mobile app',
+      actionLabel: 'Requires mobile app',
       canUnenroll: true,
     },
     {
@@ -209,7 +210,7 @@ export default function ProfilePage() {
       key: 'sso',
       icon: '🔐',
       name: 'SSO (OIDC)',
-      description: 'Federated login via IBM Verify',
+      description: 'Federated login via identity provider',
       enrolled: factors?.sso ?? false,
       action: null,
       actionLabel: 'Login with SSO to link',
@@ -228,7 +229,7 @@ export default function ProfilePage() {
           <div style={{ flex: 1 }}>
             <div style={s.name}>{user?.name}</div>
             <div style={s.email}>{user?.email}</div>
-            <div style={{ ...s.email, marginTop: '0.2rem' }}>
+            <div style={{ marginTop: '0.35rem' }}>
               <span style={s.roleBadge}>{user?.role}</span>
             </div>
           </div>
@@ -262,7 +263,7 @@ export default function ProfilePage() {
           </div>
         )}
         {!isEditing && (
-          <button style={s.actionBtn} onClick={() => {
+          <button style={s.editProfileBtn} onClick={() => {
             setIsEditing(true)
             setEditName(user?.name ?? '')
             setEditEmail(user?.email ?? '')
@@ -275,14 +276,14 @@ export default function ProfilePage() {
       </div>
 
       {/* Feedback banner */}
-      {actionMsg && <div style={s.okBox}>{actionMsg}</div>}
-      {actionError && <div style={s.errBox}>{actionError}</div>}
+      {actionMsg && <div style={s.okBox}>✓ {actionMsg}</div>}
+      {actionError && <div style={s.errBox}>⚠ {actionError}</div>}
 
       {/* Auth methods */}
       <h3 style={s.subheading}>Enrolled Authentication Methods</h3>
       {loadingFactors ? (
-        <div style={{ color: '#57606a', fontSize: '0.875rem', padding: '0.5rem 0' }}>
-          Loading enrollment status from IBM Verify...
+        <div style={{ color: T.inkSub, fontSize: '0.875rem', padding: '0.5rem 0' }}>
+          Loading enrollment status…
         </div>
       ) : (
         <div style={s.methodList}>
@@ -296,9 +297,9 @@ export default function ProfilePage() {
               <div style={s.right}>
                 <span style={{
                   ...s.statusBadge,
-                  color: m.enrolled ? '#10b981' : '#57606a',
-                  background: m.enrolled ? '#f0fdf4' : '#f7f8fa',
-                  borderColor: m.enrolled ? '#86efac' : '#e5e7eb',
+                  color: m.enrolled ? T.green : T.inkSub,
+                  background: m.enrolled ? T.greenLight : T.bgMuted,
+                  border: `1px solid ${m.enrolled ? T.greenBorder : T.border}`,
                 }}>
                   {m.enrolled ? '✓ Enrolled' : 'Not enrolled'}
                 </span>
@@ -328,13 +329,13 @@ export default function ProfilePage() {
 
       {!loadingFactors && factors === null && (
         <div style={s.noteBox}>
-          <strong>Note:</strong> Could not fetch live enrollment data from IBM Verify.
+          <strong>Note:</strong> Could not fetch live enrollment data.
           Enrollment statuses shown may not reflect the current state.
         </div>
       )}
 
       {/* ── Danger Zone ──────────────────────────────────────────────── */}
-      <h3 style={{ ...s.subheading, marginTop: '2rem', color: '#dc2626' }}>Danger Zone</h3>
+      <h3 style={{ ...s.subheading, marginTop: '2rem', color: T.red }}>Danger Zone</h3>
       <div style={s.dangerCard}>
         <div>
           <div style={s.dangerTitle}>Delete My Account</div>
@@ -352,84 +353,97 @@ export default function ProfilePage() {
 }
 
 const s: Record<string, React.CSSProperties> = {
-  heading: { margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 700, color: '#1f2328' },
+  heading: { margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.02em' },
   userCard: {
-    background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px',
-    padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem',
+    background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusCard,
+    boxShadow: T.shadowCard,
+    padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1.1rem', marginBottom: '1.5rem',
   },
   avatar: {
-    width: '52px', height: '52px', borderRadius: '50%', background: '#3b82d4',
-    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '1.4rem', fontWeight: 700, flexShrink: 0,
+    width: '54px', height: '54px', borderRadius: '50%', background: T.amber,
+    color: '#0d1117', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '1.4rem', fontWeight: 800, flexShrink: 0,
   },
-  name: { fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.2rem', color: '#1f2328' },
-  email: { fontSize: '0.875rem', color: '#57606a' },
+  name: { fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.15rem', color: T.ink, letterSpacing: '-0.01em' },
+  email: { fontSize: '0.875rem', color: T.inkSub },
   roleBadge: {
     display: 'inline-block',
-    fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' as const,
-    letterSpacing: '0.05em', padding: '0.15rem 0.5rem',
-    background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
+    fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase' as const,
+    letterSpacing: '0.06em', padding: '0.18rem 0.55rem',
+    background: T.amberLight, color: T.amber, border: `1px solid ${T.amberBorder}`,
     borderRadius: '999px',
   },
   okBox: {
-    background: '#f0fdf4', border: '1px solid #86efac', color: '#16a34a',
-    borderRadius: '8px', padding: '0.75rem 1rem', fontSize: '0.85rem', marginBottom: '1rem',
+    background: T.greenLight, border: `1px solid ${T.greenBorder}`, color: T.green,
+    borderRadius: T.radiusInner, padding: '0.75rem 1rem', fontSize: '0.85rem', marginBottom: '1rem',
   },
   errBox: {
-    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-    borderRadius: '8px', padding: '0.75rem 1rem', fontSize: '0.85rem', marginBottom: '1rem',
+    background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red,
+    borderRadius: T.radiusInner, padding: '0.75rem 1rem', fontSize: '0.85rem', marginBottom: '1rem',
   },
-  subheading: { fontSize: '1rem', fontWeight: 600, color: '#1f2328', marginBottom: '0.75rem' },
+  subheading: {
+    fontSize: '0.9rem', fontWeight: 700, color: T.ink, marginBottom: '0.75rem',
+    letterSpacing: '-0.01em',
+  },
   methodList: { display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.5rem' },
   method: {
-    background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px',
+    background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner,
     padding: '0.9rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem',
+    boxShadow: T.shadowCard,
   },
   icon: { fontSize: '1.2rem', width: '1.75rem', textAlign: 'center', flexShrink: 0 },
   info: { flex: 1 },
-  methodName: { fontSize: '0.9rem', fontWeight: 600, color: '#1f2328' },
-  methodDesc: { fontSize: '0.78rem', color: '#57606a', marginTop: '0.1rem' },
+  methodName: { fontSize: '0.9rem', fontWeight: 600, color: T.ink },
+  methodDesc: { fontSize: '0.78rem', color: T.inkSub, marginTop: '0.1rem' },
   right: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, flexWrap: 'wrap' as const },
   statusBadge: {
-    fontSize: '0.75rem', fontWeight: 600, padding: '0.2rem 0.6rem',
-    borderRadius: '999px', border: '1px solid', whiteSpace: 'nowrap' as const,
+    fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.6rem',
+    borderRadius: '999px', whiteSpace: 'nowrap' as const,
+  },
+  editProfileBtn: {
+    padding: '0.45rem 1rem', background: T.bgMuted, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+    color: T.ink, whiteSpace: 'nowrap' as const, flexShrink: 0,
   },
   actionBtn: {
-    padding: '0.35rem 0.6rem', background: '#f7f8fa', border: '1px solid #e5e7eb',
-    borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', whiteSpace: 'nowrap' as const,
+    padding: '0.35rem 0.65rem', background: T.bgMuted, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.78rem',
+    whiteSpace: 'nowrap' as const, color: T.ink, fontWeight: 600,
   },
   removeBtn: {
-    padding: '0.3rem 0.55rem', background: '#fff', border: '1px solid #fecaca',
-    color: '#dc2626', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem',
-    whiteSpace: 'nowrap' as const,
+    padding: '0.3rem 0.6rem', background: T.redLight, border: `1px solid ${T.redBorder}`,
+    color: T.red, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.75rem',
+    whiteSpace: 'nowrap' as const, fontWeight: 600,
   },
-  hint: { fontSize: '0.75rem', color: '#57606a', whiteSpace: 'nowrap' as const, fontStyle: 'italic' },
+  hint: { fontSize: '0.75rem', color: T.inkSub, whiteSpace: 'nowrap' as const, fontStyle: 'italic' },
   noteBox: {
-    background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px',
-    padding: '0.75rem 1rem', fontSize: '0.8rem', color: '#92400e',
+    background: T.amberLight, border: `1px solid ${T.amberBorder}`, borderRadius: T.radiusInner,
+    padding: '0.75rem 1rem', fontSize: '0.8rem', color: T.amber,
   },
   dangerCard: {
-    background: '#fff', border: '1px solid #fecaca', borderRadius: '10px',
+    background: T.bgCard, border: `1px solid ${T.redBorder}`, borderRadius: T.radiusCard,
     padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center',
     justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' as const,
+    boxShadow: T.shadowCard,
   },
-  dangerTitle: { fontSize: '0.9rem', fontWeight: 700, color: '#dc2626', marginBottom: '0.25rem' },
-  dangerDesc: { fontSize: '0.8rem', color: '#57606a', maxWidth: '480px' },
+  dangerTitle: { fontSize: '0.9rem', fontWeight: 700, color: T.red, marginBottom: '0.25rem' },
+  dangerDesc: { fontSize: '0.8rem', color: T.inkSub, maxWidth: '480px' },
   dangerBtn: {
-    padding: '0.5rem 1.2rem', background: '#dc2626', color: '#fff',
-    border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600,
+    padding: '0.5rem 1.2rem', background: T.red, color: '#fff',
+    border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontWeight: 700,
     fontSize: '0.85rem', whiteSpace: 'nowrap' as const, flexShrink: 0,
   },
   editInput: {
-    padding: '0.35rem 0.6rem', border: '1px solid #d1d5db', borderRadius: '6px',
-    fontSize: '0.875rem', color: '#1f2328', outline: 'none', width: '100%', maxWidth: '280px',
+    padding: '0.45rem 0.75rem', border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    fontSize: '0.875rem', color: T.ink, outline: 'none', width: '100%', maxWidth: '280px',
+    background: T.bgInput,
   },
   saveBtn: {
-    padding: '0.35rem 0.75rem', background: '#3b82d4', color: '#fff',
-    border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600,
+    padding: '0.4rem 0.85rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700,
   },
   cancelEditBtn: {
-    padding: '0.35rem 0.75rem', background: '#f7f8fa', border: '1px solid #e5e7eb',
-    borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', color: '#57606a',
+    padding: '0.4rem 0.75rem', background: T.bgMuted, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.82rem', color: T.inkSub,
   },
 }

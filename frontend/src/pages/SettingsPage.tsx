@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { T } from '../styles/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Section =
@@ -45,7 +46,7 @@ function Toggle({ label, sub, checked, onChange, disabled }: {
         {sub && <div style={{ ...f.toggleSub, opacity: disabled ? 0.45 : 1 }}>{sub}</div>}
       </div>
       <button
-        style={{ ...f.track, background: checked ? '#1a2e2a' : '#d1d5db', opacity: disabled ? 0.45 : 1, cursor: disabled ? 'default' : 'pointer' }}
+            style={{ ...f.track, background: checked ? T.amber : T.borderLight, opacity: disabled ? 0.45 : 1, cursor: disabled ? 'default' : 'pointer' }}
         onClick={() => !disabled && onChange(!checked)}
         aria-pressed={checked}
         disabled={disabled}
@@ -97,9 +98,9 @@ function Select({ label, value, options, onChange }: {
 
 function InfoBanner({ icon, text }: { icon: string; text: string }) {
   return (
-    <div style={{ padding: '0.75rem 1rem', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'flex-start', gap: '0.6rem', marginBottom: '0.75rem' }}>
+    <div style={{ padding: '0.75rem 1rem', background: T.blueLight, borderRadius: '8px', border: `1px solid ${T.blue}44`, display: 'flex', alignItems: 'flex-start', gap: '0.6rem', marginBottom: '0.75rem' }}>
       <span style={{ fontSize: '1rem', marginTop: '1px' }}>{icon}</span>
-      <span style={{ fontSize: '0.8rem', color: '#1e40af', lineHeight: 1.5 }}>{text}</span>
+      <span style={{ fontSize: '0.8rem', color: T.blue, lineHeight: 1.5 }}>{text}</span>
     </div>
   )
 }
@@ -132,7 +133,7 @@ export default function SettingsPage() {
   return (
     <div style={s.root}>
       {toast && (
-        <div style={{ ...s.toast, background: toast.kind === 'success' ? '#1a2e2a' : '#dc2626' }}>
+        <div style={{ ...s.toast, background: toast.kind === 'success' ? '#ffffff' : T.red, color: toast.kind === 'success' ? '#111827' : '#fff', border: toast.kind === 'success' ? '1px solid #e5e7eb' : 'none' }}>
           {toast.kind === 'success' ? '✓' : '✗'}  {toast.msg}
         </div>
       )}
@@ -263,11 +264,11 @@ function ProfileSection({ user, role, showToast }: {
             { label: 'MockBank Savings',  sub: 'Primary account ending ••••4821', icon: '🏦' },
             { label: 'External Bank',     sub: 'Not linked',                       icon: '🔗' },
           ].map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem 0', borderBottom: i === 0 ? '1px solid #f3f4f6' : 'none' }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem 0', borderBottom: i === 0 ? `1px solid ${T.borderLight}` : 'none' }}>
               <span style={{ fontSize: '1.4rem' }}>{item.icon}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.87rem', fontWeight: 600, color: '#1f2328' }}>{item.label}</div>
-                <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>{item.sub}</div>
+                <div style={{ fontSize: '0.87rem', fontWeight: 600, color: T.ink }}>{item.label}</div>
+                <div style={{ fontSize: '0.75rem', color: T.inkSub }}>{item.sub}</div>
               </div>
               <button style={f.outlineBtn} onClick={() => showToast('Account linking is managed through the mobile app.')}>
                 {i === 0 ? 'Manage' : 'Link'}
@@ -327,18 +328,18 @@ function SecuritySection({ role, showToast }: { role: string; showToast: (m: str
           checked={mfa}
           onChange={v => { setMfa(v); showToast(v ? 'MFA enabled.' : 'MFA disabled.') }}
         />
-        <div style={{ marginTop: '1rem', padding: '0.9rem 1rem', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
-          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#166534', marginBottom: '0.35rem' }}>Enrolled factors</div>
+        <div style={{ marginTop: '1rem', padding: '0.9rem 1rem', background: T.greenLight, borderRadius: '8px', border: `1px solid ${T.greenBorder}` }}>
+          <div style={{ fontSize: '0.82rem', fontWeight: 700, color: T.green, marginBottom: '0.35rem' }}>Enrolled factors</div>
           {[
             { name: 'Passkey (FIDO2)', status: 'enrolled' },
             { name: 'Email OTP',       status: 'enrolled' },
-            { name: 'Authenticator',   status: 'not enrolled' },
+            { name: 'Authenticator',   status: 'enrolled' },
           ].map(fac => (
-            <div key={fac.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0', borderBottom: '1px solid #dcfce7' }}>
-              <span style={{ fontSize: '0.84rem', color: '#1f2328' }}>{fac.name}</span>
+            <div key={fac.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.4rem 0', borderBottom: `1px solid ${T.greenBorder}` }}>
+              <span style={{ fontSize: '0.84rem', color: T.ink }}>{fac.name}</span>
               <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '999px',
-                background: fac.status === 'enrolled' ? '#dcfce7' : '#f3f4f6',
-                color:      fac.status === 'enrolled' ? '#166534' : '#9ca3af',
+                background: fac.status === 'enrolled' ? T.greenLight : T.bgMuted,
+                color:      fac.status === 'enrolled' ? T.green : T.inkSub,
               }}>
                 {fac.status === 'enrolled' ? '✓ Enrolled' : 'Not enrolled'}
               </span>
@@ -368,14 +369,14 @@ function SecuritySection({ role, showToast }: { role: string; showToast: (m: str
         {showSessions && (
           <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             {sessions.map((sess, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: '#f7f8fa', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
                 <span style={{ fontSize: '1.4rem' }}>💻</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '0.87rem', fontWeight: 600, color: '#1f2328', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ fontSize: '0.87rem', fontWeight: 600, color: T.ink, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     {sess.device}
-                    {sess.current && <span style={{ fontSize: '0.68rem', background: '#dcfce7', color: '#166534', padding: '0.1rem 0.4rem', borderRadius: '999px', fontWeight: 700 }}>Current</span>}
+                    {sess.current && <span style={{ fontSize: '0.68rem', background: T.greenLight, color: T.green, padding: '0.1rem 0.4rem', borderRadius: '999px', fontWeight: 700 }}>Current</span>}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#57606a' }}>{sess.ip} · {sess.location} · {sess.last}</div>
+                  <div style={{ fontSize: '0.75rem', color: T.inkSub }}>{sess.ip} · {sess.location} · {sess.last}</div>
                 </div>
                 {!sess.current && (
                   <button style={{ ...f.dangerBtn, fontSize: '0.75rem', padding: '0.3rem 0.7rem' }}
@@ -407,30 +408,55 @@ function SecuritySection({ role, showToast }: { role: string; showToast: (m: str
         </SectionCard>
       )}
 
-      {/* Admin — editable org-wide policy */}
+      {/* Admin — org-wide policy (read-only informational) */}
       {role === 'Admin' && (
         <SectionCard title="Organisation-Wide Security Policies">
-          <InfoBanner icon="🛡️" text="These settings apply to all users in your organisation. Changes take effect immediately." />
-          <Toggle
-            label="Enforce MFA for all accounts"
-            sub="All users must enrol and use a second factor at every sign-in."
-            checked={enforceMfa}
-            onChange={v => { setEnforceMfa(v); showToast(v ? 'Org-wide MFA enforcement enabled.' : 'MFA enforcement disabled.') }}
-          />
-          <Toggle
-            label="Step-up authentication"
-            sub="Re-challenge users before high-value or sensitive operations."
-            checked={stepUpEnabled}
-            onChange={v => { setStepUpEnabled(v); showToast(v ? 'Step-up auth enabled.' : 'Step-up auth disabled.') }}
-          />
-          <Toggle
-            label="Risk engine"
-            sub="Block or step-up logins flagged as anomalous by IBM Verify risk scoring."
-            checked={riskEngine}
-            onChange={v => { setRiskEngine(v); showToast(v ? 'Risk engine enabled.' : 'Risk engine disabled.') }}
-          />
-          <div style={f.actions}>
-            <SaveBtn onClick={() => showToast('Security policies saved.')} />
+          <InfoBanner icon="🛡️" text="These policies are centrally enforced by the platform and apply to all users. They cannot be overridden at the individual account level." />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+            {[
+              {
+                icon: '🔐',
+                label: 'Enforce MFA for all accounts',
+                sub: 'All users must enrol and use a second factor at every sign-in.',
+                standard: 'NIST SP 800-63B',
+                status: 'Enforced',
+              },
+              {
+                icon: '⚡',
+                label: 'Step-up authentication',
+                sub: 'Users are re-challenged before high-value or sensitive operations.',
+                standard: 'PSD2 SCA / PCI DSS 8.3',
+                status: 'Enforced',
+              },
+              {
+                icon: '🧠',
+                label: 'Adaptive risk engine',
+                sub: 'Logins flagged as anomalous by IBM Verify risk scoring are blocked or step-up challenged.',
+                standard: 'OWASP ASVS 2.2',
+                status: 'Active',
+              },
+            ].map(policy => (
+              <div key={policy.label} style={{
+                display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem',
+                padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}`,
+              }}>
+                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '1rem', marginTop: '0.05rem' }}>{policy.icon}</span>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: T.ink, marginBottom: '0.2rem' }}>{policy.label}</div>
+                    <div style={{ fontSize: '0.77rem', color: T.inkSub, lineHeight: 1.5 }}>{policy.sub}</div>
+                    <div style={{ fontSize: '0.68rem', color: T.inkLight, marginTop: '0.35rem', fontWeight: 600 }}>Standard: {policy.standard}</div>
+                  </div>
+                </div>
+                <span style={{
+                  flexShrink: 0, fontSize: '0.68rem', fontWeight: 700,
+                  padding: '0.2rem 0.6rem', borderRadius: '999px',
+                  background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}`,
+                }}>
+                  ✓ {policy.status}
+                </span>
+              </div>
+            ))}
           </div>
         </SectionCard>
       )}
@@ -549,7 +575,7 @@ function PreferencesSection({ showToast }: { showToast: (m: string) => void }) {
 
       <SectionCard title="Currency">
         <Select label="Display currency" value={currency} options={['USD — US Dollar', 'INR — Indian Rupee', 'EUR — Euro', 'GBP — British Pound', 'JPY — Japanese Yen']} onChange={setCurrency} />
-        <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: '#57606a' }}>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: T.inkSub }}>
           Currency affects how balances and transaction amounts are displayed throughout the app.
         </div>
         <div style={f.actions}>
@@ -562,10 +588,10 @@ function PreferencesSection({ showToast }: { showToast: (m: string) => void }) {
           {(['system', 'light', 'dark'] as const).map(t => (
             <button key={t}
               style={{
-                flex: 1, padding: '1rem 0.5rem', border: `2px solid ${theme === t ? '#1a2e2a' : '#e5e7eb'}`,
-                borderRadius: '10px', background: theme === t ? '#f0fdf4' : '#fff',
-                cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600,
-                color: theme === t ? '#1a2e2a' : '#57606a', textTransform: 'capitalize',
+                  flex: 1, padding: '1rem 0.5rem', border: `2px solid ${theme === t ? T.ink : T.border}`,
+                  borderRadius: T.radiusInner, background: theme === t ? T.amberLight : T.bgCard,
+                  cursor: 'pointer', fontSize: '0.84rem', fontWeight: 600,
+                  color: theme === t ? T.ink : T.inkSub, textTransform: 'capitalize',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem',
               }}
               onClick={() => { setTheme(t); showToast(`Theme set to ${t}.`) }}
@@ -625,23 +651,23 @@ function OrganizationSection({ role, showToast }: { role: string; showToast: (m:
           </button>
         ) : undefined}
       >
-        {!isAdmin && <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginBottom: '0.75rem' }}>Showing active members visible to your role.</div>}
+        {!isAdmin && <div style={{ fontSize: '0.78rem', color: T.inkSub, marginBottom: '0.75rem' }}>Showing active members visible to your role.</div>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {members.filter(m => isAdmin || m.status === 'Active').map((m, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: '#f7f8fa', borderRadius: '8px' }}>
-              <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#1a2e2a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem', flexShrink: 0 }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: T.bgMuted, borderRadius: '8px' }}>
+            <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: T.amber, color: '#0d1117', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem', flexShrink: 0 }}>
                 {m.name.charAt(0)}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.87rem', fontWeight: 600, color: '#1f2328' }}>{m.name}</div>
-                <div style={{ fontSize: '0.75rem', color: '#57606a' }}>{m.email}</div>
+                <div style={{ fontSize: '0.87rem', fontWeight: 600, color: T.ink }}>{m.name}</div>
+                <div style={{ fontSize: '0.75rem', color: T.inkSub }}>{m.email}</div>
               </div>
               <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '999px',
-                background: m.status === 'Active' ? '#dcfce7' : '#f3f4f6',
-                color:      m.status === 'Active' ? '#166534' : '#9ca3af',
-                border:     m.status === 'Active' ? '1px solid #bbf7d0' : '1px solid #e5e7eb',
+                background: m.status === 'Active' ? T.greenLight : T.bgMuted,
+                color:      m.status === 'Active' ? T.green : T.inkSub,
+                border:     m.status === 'Active' ? `1px solid ${T.greenBorder}` : `1px solid ${T.border}`,
               }}>{m.status}</span>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '999px', background: '#eff6ff', color: '#3b82f6', border: '1px solid #bfdbfe' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '999px', background: T.blueLight, color: T.blue, border: `1px solid ${T.blue}44` }}>
                 {m.role}
               </span>
               {isAdmin && (
@@ -670,9 +696,9 @@ function OrganizationSection({ role, showToast }: { role: string; showToast: (m:
             checked={scimEnabled}
             onChange={v => { setScimEnabled(v); showToast(v ? 'SCIM enabled.' : 'SCIM disabled.') }}
           />
-          <div style={{ marginTop: '0.9rem', padding: '0.85rem 1rem', background: '#f7f8fa', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#57606a', marginBottom: '0.4rem' }}>SCIM Base URL</div>
-            <code style={{ fontSize: '0.78rem', color: '#1a2e2a', wordBreak: 'break-all' as const }}>
+          <div style={{ marginTop: '0.9rem', padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: T.inkSub, marginBottom: '0.4rem' }}>SCIM Base URL</div>
+            <code style={{ fontSize: '0.78rem', color: T.ink, wordBreak: 'break-all' as const }}>
               https://kavyad.verify.ibm.com/v2.0/scim
             </code>
           </div>
@@ -690,9 +716,9 @@ function OrganizationSection({ role, showToast }: { role: string; showToast: (m:
             { label: 'SCIM Provisioning',     status: 'Active' },
             { label: 'MFA Enforcement',        status: 'Enabled' },
           ].map(item => (
-            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0', borderBottom: '1px solid #f3f4f6' }}>
-              <span style={{ fontSize: '0.87rem', color: '#1f2328', fontWeight: 500 }}>{item.label}</span>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.6rem', borderRadius: '999px', background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0', borderBottom: `1px solid ${T.borderLight}` }}>
+              <span style={{ fontSize: '0.87rem', color: T.ink, fontWeight: 500 }}>{item.label}</span>
+              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.6rem', borderRadius: '999px', background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}` }}>
                 {item.status}
               </span>
             </div>
@@ -734,13 +760,13 @@ function DevelopersSection({ role, showToast }: { role: string; showToast: (m: s
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           {keys.map((k, i) => (
-            <div key={i} style={{ padding: '0.85rem 1rem', background: '#f7f8fa', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+            <div key={i} style={{ padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                <div style={{ fontWeight: 700, fontSize: '0.87rem', color: '#1f2328', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ fontWeight: 700, fontSize: '0.87rem', color: T.ink, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   {k.name}
                   <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: '999px',
-                    background: k.active ? '#dcfce7' : '#f3f4f6',
-                    color:      k.active ? '#166534' : '#9ca3af',
+                    background: k.active ? T.greenLight : T.bgMuted,
+                    color:      k.active ? T.green : T.inkSub,
                   }}>{k.active ? 'Active' : 'Revoked'}</span>
                 </div>
                 {isAdmin && k.active && (
@@ -750,8 +776,8 @@ function DevelopersSection({ role, showToast }: { role: string; showToast: (m: s
                   </button>
                 )}
               </div>
-              <code style={{ fontSize: '0.78rem', color: '#57606a', display: 'block', marginBottom: '0.3rem' }}>{k.key}</code>
-              <div style={{ fontSize: '0.73rem', color: '#9ca3af' }}>
+              <code style={{ fontSize: '0.78rem', color: T.inkSub, display: 'block', marginBottom: '0.3rem' }}>{k.key}</code>
+              <div style={{ fontSize: '0.73rem', color: T.inkLight }}>
                 Created {k.created} · Last used {k.last}
               </div>
             </div>
@@ -776,7 +802,7 @@ function DevelopersSection({ role, showToast }: { role: string; showToast: (m: s
         />
         <div style={{ marginTop: '0.9rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap' as const }}>
           {['transaction.created', 'transfer.completed', 'user.created', 'user.suspended', 'mfa.enrolled'].map(ev => (
-            <span key={ev} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', background: '#eff6ff', color: '#3b82f6', border: '1px solid #bfdbfe', borderRadius: '999px', fontWeight: 600 }}>
+            <span key={ev} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', background: T.blueLight, color: T.blue, border: `1px solid ${T.blue}44`, borderRadius: '999px', fontWeight: 600 }}>
               {ev}
             </span>
           ))}
@@ -800,13 +826,13 @@ function DevelopersSection({ role, showToast }: { role: string; showToast: (m: s
               { label: 'Write operations', limit: '200 / min',   used: 47,  total: 200  },
               { label: 'Auth requests',    limit: '50 / min',    used: 12,  total: 50   },
             ].map(r => (
-              <div key={r.label} style={{ padding: '0.85rem 1rem', background: '#f7f8fa', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div key={r.label} style={{ padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#1f2328' }}>{r.label}</span>
-                  <span style={{ fontSize: '0.78rem', color: '#57606a' }}>{r.used} / {r.limit}</span>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: T.ink }}>{r.label}</span>
+                  <span style={{ fontSize: '0.78rem', color: T.inkSub }}>{r.used} / {r.limit}</span>
                 </div>
-                <div style={{ height: '6px', background: '#e5e7eb', borderRadius: '99px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(r.used / r.total) * 100}%`, background: r.used / r.total > 0.8 ? '#ef4444' : '#1a2e2a', borderRadius: '99px' }} />
+                <div style={{ height: '6px', background: T.border, borderRadius: '99px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(r.used / r.total) * 100}%`, background: r.used / r.total > 0.8 ? T.red : T.ink, borderRadius: '99px' }} />
                 </div>
               </div>
             ))}
@@ -822,13 +848,13 @@ function DevelopersSection({ role, showToast }: { role: string; showToast: (m: s
               { label: 'Read operations',  used: 342,  total: 1000, limit: '1,000 / min' },
               { label: 'Write operations', used: 47,   total: 200,  limit: '200 / min'   },
             ].map(r => (
-              <div key={r.label} style={{ padding: '0.85rem 1rem', background: '#f7f8fa', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+              <div key={r.label} style={{ padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#1f2328' }}>{r.label}</span>
-                  <span style={{ fontSize: '0.78rem', color: '#57606a' }}>{r.used} / {r.limit}</span>
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: T.ink }}>{r.label}</span>
+                  <span style={{ fontSize: '0.78rem', color: T.inkSub }}>{r.used} / {r.limit}</span>
                 </div>
-                <div style={{ height: '6px', background: '#e5e7eb', borderRadius: '99px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(r.used / r.total) * 100}%`, background: '#1a2e2a', borderRadius: '99px' }} />
+                <div style={{ height: '6px', background: T.border, borderRadius: '99px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(r.used / r.total) * 100}%`, background: T.ink, borderRadius: '99px' }} />
                 </div>
               </div>
             ))}
@@ -840,108 +866,108 @@ function DevelopersSection({ role, showToast }: { role: string; showToast: (m: s
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const ACCENT = '#1a2e2a'
-
 const s: Record<string, React.CSSProperties> = {
-  root:       { fontFamily: '-apple-system,"Segoe UI",system-ui,sans-serif', position: 'relative' },
+  root:       { fontFamily: T.fontFamily, position: 'relative' },
   pageHeader: { marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
-  pageTitle:  { fontSize: '1.4rem', fontWeight: 700, color: ACCENT, margin: 0 },
-  pageSub:    { fontSize: '0.82rem', color: '#57606a', marginTop: '0.25rem', maxWidth: '520px' },
-  body:       { display: 'flex', gap: '1.5rem', alignItems: 'flex-start' },
+  pageTitle:  { fontSize: '1.5rem', fontWeight: 800, color: T.ink, margin: 0, letterSpacing: '-0.02em' },
+  pageSub:    { fontSize: '0.82rem', color: T.inkSub, marginTop: '0.25rem', maxWidth: '520px' },
+  body:       { display: 'flex', gap: '1.25rem', alignItems: 'flex-start' },
   sidebar: {
-    width: '190px', flexShrink: 0, background: '#fff',
-    border: '1px solid #e5e7eb', borderRadius: '12px',
+    width: '190px', flexShrink: 0, background: T.bgCard,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusCard,
+    boxShadow: T.shadowCard,
     padding: '0.65rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '2px',
     position: 'sticky' as const, top: '0',
   },
   navGroup: {
-    fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.08em',
-    color: '#9ca3af', padding: '0.4rem 0.85rem 0.2rem',
+    fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em',
+    color: T.inkLight, padding: '0.4rem 0.85rem 0.2rem',
     textTransform: 'uppercase' as const,
   },
   navBtn: {
     display: 'flex', alignItems: 'center', gap: '0.6rem',
-    padding: '0.6rem 0.85rem', borderRadius: '8px', border: 'none',
+    padding: '0.6rem 0.85rem', borderRadius: '10px', border: 'none',
     background: 'transparent', cursor: 'pointer',
-    fontSize: '0.87rem', fontWeight: 500, color: '#57606a',
+    fontSize: '0.87rem', fontWeight: 500, color: T.inkSub,
     width: '100%', textAlign: 'left' as const,
   },
-  navBtnActive: { background: '#f0fdf4', color: ACCENT, fontWeight: 700 },
+  navBtnActive: { background: T.amberLight, color: T.amber, fontWeight: 700 },
   navIcon:    { fontSize: '1rem' },
   content:    { flex: 1, minWidth: 0 },
   toast: {
     position: 'fixed' as const, bottom: '1.5rem', right: '1.5rem',
-    color: '#fff', padding: '0.75rem 1.25rem', borderRadius: '10px',
+    color: '#fff', padding: '0.75rem 1.25rem', borderRadius: T.radiusInner,
     fontSize: '0.84rem', fontWeight: 600, zIndex: 9999,
-    boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+    boxShadow: T.shadowPop,
   },
   roleBadge: {
     fontSize: '0.72rem', fontWeight: 700, padding: '0.3rem 0.9rem',
     borderRadius: '999px', border: '1px solid', flexShrink: 0, marginTop: '0.2rem',
   },
-  roleBadgeCust:  { background: '#eff6ff', color: '#2563eb', borderColor: '#bfdbfe' },
-  roleBadgeMgr:   { background: '#f5f3ff', color: '#7c3aed', borderColor: '#ddd6fe' },
-  roleBadgeAdmin: { background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa' },
+  roleBadgeCust:  { background: T.blueLight, color: T.blue, borderColor: T.blue + '44' },
+  roleBadgeMgr:   { background: '#3b1fa833', color: '#a78bfa', borderColor: '#7c3aed44' },
+  roleBadgeAdmin: { background: T.amberLight, color: T.amber, borderColor: T.amberBorder },
 }
 
 const f: Record<string, React.CSSProperties> = {
   card: {
-    background: '#fff', border: '1px solid #e5e7eb',
-    borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.25rem',
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusCard, padding: '1.25rem 1.5rem', marginBottom: '1.25rem',
+    boxShadow: T.shadowCard,
   },
   cardHead: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: '1.1rem',
   },
-  cardTitle:    { fontSize: '0.92rem', fontWeight: 700, color: ACCENT },
+  cardTitle:    { fontSize: '0.92rem', fontWeight: 700, color: T.ink, letterSpacing: '-0.01em' },
   grid2:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' },
   grid1:        { display: 'grid', gridTemplateColumns: '1fr', gap: '0.85rem' },
   fieldWrap:    { display: 'flex', flexDirection: 'column', gap: '0.3rem' },
-  label:        { fontSize: '0.78rem', fontWeight: 600, color: '#57606a' },
+  label:        { fontSize: '0.75rem', fontWeight: 600, color: T.inkSub },
   input: {
-    padding: '0.55rem 0.75rem', border: '1px solid #d1d5db',
-    borderRadius: '7px', fontSize: '0.87rem', color: '#1f2328',
+    padding: '0.55rem 0.75rem', border: `1px solid ${T.border}`,
+    borderRadius: T.radiusInput, fontSize: '0.87rem', color: T.ink,
     outline: 'none', width: '100%', boxSizing: 'border-box' as const,
-    background: '#fff',
+    background: T.bgCard,
   },
-  inputReadonly: { background: '#f7f8fa', color: '#9ca3af', cursor: 'default' },
-  hint:          { fontSize: '0.72rem', color: '#9ca3af', marginTop: '0.15rem' },
+  inputReadonly: { background: T.bgMuted, color: T.inkSub, cursor: 'default' },
+  hint:          { fontSize: '0.72rem', color: T.inkLight, marginTop: '0.15rem' },
   select: {
-    padding: '0.55rem 0.75rem', border: '1px solid #d1d5db',
-    borderRadius: '7px', fontSize: '0.87rem', color: '#1f2328',
-    background: '#fff', width: '100%', boxSizing: 'border-box' as const,
-    cursor: 'pointer',
+    padding: '0.55rem 0.75rem', border: `1px solid ${T.border}`,
+    borderRadius: T.radiusInput, fontSize: '0.87rem', color: T.ink,
+    background: T.bgCard, width: '100%', boxSizing: 'border-box' as const,
+    cursor: 'pointer', outline: 'none',
   },
   actions: {
     display: 'flex', gap: '0.6rem', marginTop: '1.1rem',
-    paddingTop: '1rem', borderTop: '1px solid #f3f4f6',
+    paddingTop: '1rem', borderTop: `1px solid ${T.borderLight}`,
   },
   saveBtn: {
-    padding: '0.5rem 1.1rem', background: ACCENT, color: '#fff',
-    border: 'none', borderRadius: '7px', cursor: 'pointer',
+    padding: '0.5rem 1.1rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: T.radiusPill, cursor: 'pointer',
     fontSize: '0.84rem', fontWeight: 700,
   },
   cancelBtn: {
-    padding: '0.5rem 1rem', background: 'transparent', color: '#57606a',
-    border: '1px solid #d1d5db', borderRadius: '7px', cursor: 'pointer',
+    padding: '0.5rem 1rem', background: 'transparent', color: T.inkSub,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer',
     fontSize: '0.84rem', fontWeight: 600,
   },
   outlineBtn: {
-    padding: '0.45rem 0.9rem', background: 'transparent', color: ACCENT,
-    border: `1px solid ${ACCENT}`, borderRadius: '7px', cursor: 'pointer',
-    fontSize: '0.82rem', fontWeight: 700,
+    padding: '0.45rem 0.9rem', background: T.bgMuted, color: T.ink,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer',
+    fontSize: '0.82rem', fontWeight: 600,
   },
   dangerBtn: {
-    padding: '0.45rem 0.9rem', background: 'transparent', color: '#dc2626',
-    border: '1px solid #fecaca', borderRadius: '7px', cursor: 'pointer',
+    padding: '0.45rem 0.9rem', background: T.redLight, color: T.red,
+    border: `1px solid ${T.redBorder}`, borderRadius: T.radiusPill, cursor: 'pointer',
     fontSize: '0.82rem', fontWeight: 700,
   },
   toggleRow: {
     display: 'flex', alignItems: 'center', gap: '1rem',
-    padding: '0.75rem 0', borderBottom: '1px solid #f3f4f6',
+    padding: '0.75rem 0', borderBottom: `1px solid ${T.borderLight}`,
   },
-  toggleLabel: { fontSize: '0.87rem', fontWeight: 600, color: '#1f2328' },
-  toggleSub:   { fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.1rem' },
+  toggleLabel: { fontSize: '0.87rem', fontWeight: 600, color: T.ink },
+  toggleSub:   { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.1rem' },
   track: {
     width: '44px', height: '24px', borderRadius: '999px', border: 'none',
     position: 'relative' as const, cursor: 'pointer', transition: 'background 0.2s',

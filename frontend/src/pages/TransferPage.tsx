@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../api/axios'
+import { T } from '../styles/theme'
 
 interface Account {
   id: number; type: string; account_number: string; balance: number; currency: string
@@ -89,7 +90,8 @@ export default function TransferPage() {
         {/* ── Transfer form ── */}
         <div style={s.formPanel}>
           <div style={s.formTitle}>
-            <span style={s.formTitleIcon}>↑</span> New Transfer
+            <span style={s.formTitleIcon}>↑</span>
+            New Transfer
           </div>
 
           <div style={s.divider} />
@@ -107,7 +109,7 @@ export default function TransferPage() {
             </div>
             {fromAccount && (
               <div style={s.available}>
-                Available: <strong style={{ color: '#1a2e2a' }}>${fromAccount.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                Available: <strong style={{ color: T.ink }}>${fromAccount.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
               </div>
             )}
           </div>
@@ -151,8 +153,8 @@ export default function TransferPage() {
           {error   && <div style={s.errBox}>{error}</div>}
           {success && <div style={s.successBox}>✓ {success}</div>}
 
-          <button style={s.transferBtn} onClick={handleTransfer} disabled={loading}>
-            {loading ? 'Processing…' : <><span>↑</span> Transfer Funds</>}
+          <button style={{ ...s.transferBtn, opacity: loading ? 0.7 : 1 }} onClick={handleTransfer} disabled={loading}>
+            {loading ? 'Processing…' : '↑  Transfer Funds'}
           </button>
         </div>
 
@@ -181,10 +183,13 @@ export default function TransferPage() {
             <div style={s.infoPanelTitle}>Your Balances</div>
             {accounts.map(a => (
               <div key={a.id} style={s.balanceRow}>
-                <div style={s.balanceAcct}>
-                  {a.type.charAt(0).toUpperCase() + a.type.slice(1)} ••{a.account_number.slice(-4)}
+                <div>
+                  <div style={s.balanceAcct}>
+                    {a.type.charAt(0).toUpperCase() + a.type.slice(1)}
+                  </div>
+                  <div style={s.balanceAcctSub}>••••{a.account_number.slice(-4)}</div>
                 </div>
-                <div style={{ ...s.balanceAmt, color: a.balance < 0 ? '#dc2626' : '#1a2e2a' }}>
+                <div style={{ ...s.balanceAmt, color: a.balance < 0 ? T.red : T.ink }}>
                   {a.balance < 0 ? '-' : ''}${Math.abs(a.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </div>
               </div>
@@ -198,53 +203,54 @@ export default function TransferPage() {
 
 const s: Record<string, React.CSSProperties> = {
   pageHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' },
-  title: { margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 700, color: '#1a2e2a' },
-  sub: { margin: 0, color: '#9ca3af', fontSize: '0.85rem' },
+  title: { margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.02em' },
+  sub: { margin: 0, color: T.inkSub, fontSize: '0.85rem' },
 
   layout: { display: 'grid', gridTemplateColumns: '1fr 300px', gap: '1.25rem', alignItems: 'start' },
 
   formPanel: {
-    background: '#fff', borderRadius: '14px', border: '1px solid #e5e7eb',
-    padding: '1.75rem 2rem',
+    background: T.bgCard, borderRadius: T.radiusCard, border: `1px solid ${T.border}`,
+    padding: '1.75rem 2rem', boxShadow: T.shadowCard,
   },
   formTitle: {
-    fontSize: '1rem', fontWeight: 700, color: '#1a2e2a',
-    display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem',
+    fontSize: '1rem', fontWeight: 700, color: T.ink,
+    display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '1.25rem',
   },
   formTitleIcon: {
-    width: '28px', height: '28px', borderRadius: '6px', background: '#f0fdf4',
-    color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: '28px', height: '28px', borderRadius: '8px', background: T.amberLight,
+    color: T.amber, display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontSize: '0.9rem', fontWeight: 700,
   },
-  divider: { height: '1px', background: '#f3f4f6', marginBottom: '1.5rem' },
+  divider: { height: '1px', background: T.borderLight, marginBottom: '1.5rem' },
 
   fieldGroup: { marginBottom: '1.25rem' },
   fieldLabel: {
-    display: 'block', fontSize: '0.68rem', fontWeight: 700,
-    letterSpacing: '0.07em', color: '#9ca3af', marginBottom: '0.5rem',
+    display: 'block', fontSize: '0.65rem', fontWeight: 700,
+    letterSpacing: '0.09em', color: T.inkSub, marginBottom: '0.5rem',
+    textTransform: 'uppercase' as const,
   },
   selectWrapper: { position: 'relative' as const },
   select: {
     width: '100%', padding: '0.75rem 2.5rem 0.75rem 1rem',
-    border: '1px solid #e5e7eb', borderRadius: '10px',
-    fontSize: '0.9rem', color: '#1a2e2a', background: '#fff',
+    border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    fontSize: '0.9rem', color: T.ink, background: T.bgInput,
     appearance: 'none' as const, cursor: 'pointer',
-    boxSizing: 'border-box' as const,
+    boxSizing: 'border-box' as const, outline: 'none',
   },
   selectArrow: {
     position: 'absolute' as const, right: '1rem', top: '50%',
-    transform: 'translateY(-50%)', color: '#9ca3af', pointerEvents: 'none' as const,
+    transform: 'translateY(-50%)', color: T.inkSub, pointerEvents: 'none' as const,
   },
-  available: { marginTop: '0.4rem', fontSize: '0.8rem', color: '#57606a' },
+  available: { marginTop: '0.4rem', fontSize: '0.8rem', color: T.inkSub },
 
   swapRow: {
     display: 'flex', alignItems: 'center', gap: '0.75rem',
     margin: '0.5rem 0 1.25rem',
   },
-  swapLine: { flex: 1, height: '1px', background: '#f3f4f6' },
+  swapLine: { flex: 1, height: '1px', background: T.borderLight },
   swapCircle: {
     width: '36px', height: '36px', borderRadius: '50%',
-    border: '1px solid #e5e7eb', background: '#fff', color: '#9ca3af',
+    border: `1px solid ${T.border}`, background: T.bgCard, color: T.inkSub,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontSize: '1rem', flexShrink: 0,
   },
@@ -252,53 +258,58 @@ const s: Record<string, React.CSSProperties> = {
   amountWrapper: { position: 'relative' as const },
   amountPrefix: {
     position: 'absolute' as const, left: '1rem', top: '50%',
-    transform: 'translateY(-50%)', color: '#9ca3af', fontSize: '0.9rem',
+    transform: 'translateY(-50%)', color: T.inkSub, fontSize: '0.9rem',
   },
   amountInput: {
     width: '100%', padding: '0.75rem 1rem 0.75rem 2rem',
-    border: '1px solid #e5e7eb', borderRadius: '10px',
-    fontSize: '0.9rem', color: '#1a2e2a',
-    boxSizing: 'border-box' as const, outline: 'none',
+    border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    fontSize: '0.9rem', color: T.ink,
+    boxSizing: 'border-box' as const, outline: 'none', background: T.bgInput,
   },
   mfaHint: {
-    marginTop: '0.4rem', fontSize: '0.78rem', color: '#d97706',
+    marginTop: '0.4rem', fontSize: '0.78rem', color: T.amber,
     display: 'flex', alignItems: 'center', gap: '0.3rem',
   },
 
   errBox: {
-    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-    borderRadius: '8px', padding: '0.65rem 1rem', fontSize: '0.83rem', marginBottom: '1rem',
+    background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red,
+    borderRadius: T.radiusInner, padding: '0.65rem 1rem', fontSize: '0.83rem', marginBottom: '1rem',
   },
   successBox: {
-    background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#16a34a',
-    borderRadius: '8px', padding: '0.65rem 1rem', fontSize: '0.83rem', marginBottom: '1rem',
+    background: T.greenLight, border: `1px solid ${T.greenBorder}`, color: T.green,
+    borderRadius: T.radiusInner, padding: '0.65rem 1rem', fontSize: '0.83rem', marginBottom: '1rem',
   },
 
   transferBtn: {
-    width: '100%', padding: '0.85rem', background: '#1a2e2a', color: '#fff',
-    border: 'none', borderRadius: '10px', cursor: 'pointer',
+    width: '100%', padding: '0.88rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: T.radiusBtn, cursor: 'pointer',
     fontWeight: 700, fontSize: '0.95rem',
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+    letterSpacing: '0.01em',
   },
 
   rightCol: { display: 'flex', flexDirection: 'column' as const, gap: '1rem' },
   infoPanel: {
-    background: '#fff', borderRadius: '14px', border: '1px solid #e5e7eb',
-    padding: '1.25rem 1.5rem',
+    background: T.bgCard, borderRadius: T.radiusCard, border: `1px solid ${T.border}`,
+    padding: '1.25rem 1.5rem', boxShadow: T.shadowCard,
   },
-  infoPanelTitle: { fontSize: '0.875rem', fontWeight: 700, color: '#1a2e2a', marginBottom: '0.85rem' },
+  infoPanelTitle: {
+    fontSize: '0.82rem', fontWeight: 700, color: T.ink,
+    marginBottom: '1rem', letterSpacing: '-0.01em',
+  },
   infoRow: {
     display: 'flex', alignItems: 'flex-start', gap: '0.65rem',
-    padding: '0.5rem 0', borderBottom: '1px solid #f3f4f6',
+    padding: '0.5rem 0', borderBottom: `1px solid ${T.borderLight}`,
   },
   infoIcon: { fontSize: '1rem', flexShrink: 0, marginTop: '0.05rem' },
-  infoTitle: { fontSize: '0.83rem', fontWeight: 600, color: '#1a2e2a' },
-  infoSub: { fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.1rem' },
+  infoTitle: { fontSize: '0.83rem', fontWeight: 600, color: T.ink },
+  infoSub: { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.1rem' },
 
   balanceRow: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '0.55rem 0', borderBottom: '1px solid #f3f4f6',
+    padding: '0.6rem 0', borderBottom: `1px solid ${T.borderLight}`,
   },
-  balanceAcct: { fontSize: '0.82rem', color: '#57606a' },
+  balanceAcct: { fontSize: '0.82rem', fontWeight: 600, color: T.ink },
+  balanceAcctSub: { fontSize: '0.72rem', color: T.inkSub, marginTop: '0.05rem' },
   balanceAmt: { fontSize: '0.875rem', fontWeight: 700 },
 }

@@ -59,9 +59,13 @@ class Settings(BaseSettings):
     # Set to 0 to require step-up for ALL transfers.
     transfer_stepup_threshold: float = 100.0
 
+    # How long (minutes) the main session JWT remains valid.
+    # Set SESSION_EXPIRE_MINUTES in .env to override (default: 60).
+    session_expire_minutes: int = 60
+
     # How long (minutes) a step-up token remains valid after issue.
     # After this window the user must re-verify even if their session is active.
-    stepup_duration_minutes: int = 10
+    stepup_duration_minutes: int = 0
 
     # When True, every admin operation (create/update/disable/delete user) requires
     # a valid step-up even if the admin already completed one earlier in the session.

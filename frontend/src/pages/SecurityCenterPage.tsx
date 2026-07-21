@@ -1,24 +1,25 @@
 import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { T } from '../styles/theme'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 interface Alert { level: 'high' | 'medium' | 'low'; title: string; detail: string }
 interface SignIn { date: string; device: string; location: string; method: string; status: 'success' | 'failed' }
 
 const LEVEL_COLOR: Record<Alert['level'], string> = {
-  high: '#ef4444', medium: '#f59e0b', low: '#3b82f4',
+  high: T.red, medium: T.amber, low: T.blue,
 }
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
 function ScoreRing({ score }: { score: number }) {
-  const color = score >= 70 ? '#4ade80' : score >= 45 ? '#f59e0b' : '#ef4444'
+  const color = score >= 70 ? T.green : score >= 45 ? T.amber : T.red
   return (
     <div style={s.scoreCard}>
       <div style={s.scoreLabel}>Security Score</div>
       <div style={s.scoreRing}>
         <svg viewBox="0 0 80 80" width="80" height="80">
-          <circle cx="40" cy="40" r="34" fill="none" stroke="#e5e7eb" strokeWidth="8" />
+          <circle cx="40" cy="40" r="34" fill="none" stroke={T.borderLight} strokeWidth="8" />
           <circle cx="40" cy="40" r="34" fill="none" stroke={color} strokeWidth="8"
             strokeLinecap="round"
             strokeDasharray={`${(score / 100) * 213.6} 213.6`}
@@ -65,16 +66,16 @@ function SignInsTable({ rows }: { rows: SignIn[] }) {
         </tr></thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f7f8fa' }}>
+            <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
               <td style={s.td}>{r.date}</td>
               <td style={s.td}>{r.device}</td>
               <td style={s.td}>{r.location}</td>
               <td style={s.td}>{r.method}</td>
               <td style={s.td}>
                 <span style={{ ...s.statusBadge,
-                  background: r.status === 'success' ? '#f0fdf4' : '#fef2f2',
-                  color:      r.status === 'success' ? '#16a34a' : '#dc2626',
-                  border:     `1px solid ${r.status === 'success' ? '#bbf7d0' : '#fecaca'}`,
+                  background: r.status === 'success' ? T.greenLight : T.redLight,
+                  color:      r.status === 'success' ? T.green : T.red,
+                  border:     `1px solid ${r.status === 'success' ? T.greenBorder : T.redBorder}`,
                 }}>
                   {r.status === 'success' ? 'Success' : 'Failed'}
                 </span>
@@ -89,7 +90,6 @@ function SignInsTable({ rows }: { rows: SignIn[] }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  CUSTOMER VIEW
-//  Focus: personal MFA methods, own devices, own sign-in history, score
 // ─────────────────────────────────────────────────────────────────────────────
 function CustomerSecurityView() {
   const methods = [
@@ -118,7 +118,6 @@ function CustomerSecurityView() {
 
   return (
     <>
-      {/* Header */}
       <div style={s.pageHeader}>
         <div>
           <h1 style={s.pageTitle}>Security Center</h1>
@@ -127,18 +126,16 @@ function CustomerSecurityView() {
         <span style={{ ...s.rolePill, ...s.pillCustomer }}>Customer</span>
       </div>
 
-      {/* Score + Alerts */}
       <div style={s.topRow}>
         <ScoreRing score={score} />
         <AlertsCard alerts={alerts} />
       </div>
 
-      {/* MFA Methods */}
       <div style={s.card}>
         <div style={s.cardTitle}>Your Authentication Methods</div>
         <div style={s.methodsGrid}>
           {methods.map((m, i) => (
-            <div key={i} style={{ ...s.methodCard, borderColor: m.enrolled ? '#4ade8044' : '#e5e7eb' }}>
+            <div key={i} style={{ ...s.methodCard, borderColor: m.enrolled ? T.greenBorder : T.border }}>
               <div style={s.methodTop}>
                 <span style={{ ...s.enrolledBadge, ...(m.enrolled ? s.enrolledOn : s.enrolledOff) }}>
                   {m.enrolled ? '✓ Enrolled' : 'Not Enrolled'}
@@ -154,7 +151,6 @@ function CustomerSecurityView() {
         </div>
       </div>
 
-      {/* Trusted devices */}
       <div style={s.card}>
         <div style={s.cardTitle}>My Trusted Devices</div>
         <div style={s.deviceList}>
@@ -186,7 +182,6 @@ function CustomerSecurityView() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  MANAGER VIEW
-//  Focus: own security posture + team/customer security overview
 // ─────────────────────────────────────────────────────────────────────────────
 function ManagerSecurityView() {
   const myAlerts: Alert[] = [
@@ -199,14 +194,13 @@ function ManagerSecurityView() {
     { date: '2 days ago, 10:12', device: 'Chrome / macOS', location: 'Chennai, IN',   method: 'Email OTP', status: 'success' },
   ]
 
-  // Team / customer summary (mock)
   const teamStats = [
-    { label: 'Users with MFA',          value: 38, total: 42, color: '#10b981' },
-    { label: 'Users without MFA',        value: 4,  total: 42, color: '#ef4444' },
-    { label: 'Suspended accounts',       value: 2,  total: 42, color: '#f59e0b' },
+    { label: 'Users with MFA',          value: 38, total: 42, color: T.green },
+    { label: 'Users without MFA',        value: 4,  total: 42, color: T.red },
+    { label: 'Suspended accounts',       value: 2,  total: 42, color: T.amber },
     { label: 'Failed logins (24h)',       value: 7,  total: null, color: '#7c5cd8' },
-    { label: 'High-risk users',          value: 3,  total: null, color: '#ef4444' },
-    { label: 'New joiners (7d)',          value: 6,  total: null, color: '#3b82f6' },
+    { label: 'High-risk users',          value: 3,  total: null, color: T.red },
+    { label: 'New joiners (7d)',          value: 6,  total: null, color: T.blue },
   ]
 
   const riskUsers = [
@@ -225,13 +219,11 @@ function ManagerSecurityView() {
         <span style={{ ...s.rolePill, ...s.pillManager }}>Manager</span>
       </div>
 
-      {/* Own score + alerts */}
       <div style={s.topRow}>
         <ScoreRing score={myScore} />
         <AlertsCard alerts={myAlerts} />
       </div>
 
-      {/* Team security overview */}
       <div style={s.card}>
         <div style={s.cardTitle}>Team Security Overview</div>
         <div style={s.statsGrid}>
@@ -239,7 +231,7 @@ function ManagerSecurityView() {
             <div key={stat.label} style={s.statTile}>
               <div style={{ ...s.statVal, color: stat.color }}>{stat.value}</div>
               {stat.total !== null && (
-                <div style={{ height: '4px', background: '#f3f4f6', borderRadius: '99px', margin: '0.35rem 0' }}>
+                <div style={{ height: '4px', background: T.borderLight, borderRadius: '99px', margin: '0.35rem 0' }}>
                   <div style={{ height: '100%', width: `${Math.round((stat.value / stat.total) * 100)}%`, background: stat.color, borderRadius: '99px' }} />
                 </div>
               )}
@@ -249,11 +241,10 @@ function ManagerSecurityView() {
         </div>
       </div>
 
-      {/* At-risk users */}
       <div style={s.card}>
         <div style={s.cardTitleRow}>
           <div style={s.cardTitle}>At-Risk Users</div>
-          <span style={{ fontSize: '0.75rem', color: '#57606a' }}>Requires action</span>
+          <span style={{ fontSize: '0.75rem', color: T.inkSub }}>Requires action</span>
         </div>
         <table style={s.table}>
           <thead><tr>
@@ -263,21 +254,21 @@ function ManagerSecurityView() {
           </tr></thead>
           <tbody>
             {riskUsers.map((u, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f7f8fa' }}>
+              <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
                 <td style={s.td}>
                   <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.name}</div>
-                  <div style={{ fontSize: '0.74rem', color: '#9ca3af' }}>{u.email}</div>
+                  <div style={{ fontSize: '0.74rem', color: T.inkSub }}>{u.email}</div>
                 </td>
                 <td style={s.td}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ width: '60px', height: '5px', background: '#f3f4f6', borderRadius: '99px', overflow: 'hidden' }}>
-                      <div style={{ width: `${u.risk}%`, height: '100%', background: u.risk > 45 ? '#ef4444' : '#f59e0b', borderRadius: '99px' }} />
+                    <div style={{ width: '60px', height: '5px', background: T.bgMuted, borderRadius: '99px', overflow: 'hidden' }}>
+                      <div style={{ width: `${u.risk}%`, height: '100%', background: u.risk > 45 ? T.red : T.amber, borderRadius: '99px' }} />
                     </div>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#57606a' }}>{u.risk}</span>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: T.inkSub }}>{u.risk}</span>
                   </div>
                 </td>
-                <td style={{ ...s.td, fontSize: '0.82rem', color: '#ef4444' }}>{u.issue}</td>
-                <td style={{ ...s.td, fontSize: '0.8rem', color: '#9ca3af' }}>{u.last}</td>
+                <td style={{ ...s.td, fontSize: '0.82rem', color: T.red }}>{u.issue}</td>
+                <td style={{ ...s.td, fontSize: '0.8rem', color: T.inkSub }}>{u.last}</td>
                 <td style={s.td}>
                   <button style={s.actionBtn}>Review</button>
                 </td>
@@ -294,14 +285,8 @@ function ManagerSecurityView() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ADMIN VIEW
-//  Focus: org-wide security posture, policy controls, audit log, threat intel
 // ─────────────────────────────────────────────────────────────────────────────
 function AdminSecurityView() {
-  const [mfaPolicy,      setMfaPolicy]      = useState(true)
-  const [sessionTimeout, setSessionTimeout] = useState(true)
-  const [riskEngine,     setRiskEngine]     = useState(true)
-  const [stepUpHighRisk, setStepUpHighRisk] = useState(true)
-
   const orgScore = 74
   const orgAlerts: Alert[] = [
     { level: 'high',   title: '4 users have no MFA enrolled',       detail: 'Enforce MFA policy or suspend access for these accounts.' },
@@ -310,12 +295,12 @@ function AdminSecurityView() {
   ]
 
   const orgStats = [
-    { label: 'Total Identities',    value: 42,  color: '#1a2e2a' },
-    { label: 'Active',              value: 40,  color: '#10b981' },
-    { label: 'Suspended',           value: 2,   color: '#ef4444' },
-    { label: 'MFA Enrolled',        value: 38,  color: '#3b82f6' },
-    { label: 'MFA Not Enrolled',    value: 4,   color: '#f59e0b' },
-    { label: 'High-Risk Users',     value: 3,   color: '#ef4444' },
+    { label: 'Total Identities',    value: 42,  color: T.ink },
+    { label: 'Active',              value: 40,  color: T.green },
+    { label: 'Suspended',           value: 2,   color: T.red },
+    { label: 'MFA Enrolled',        value: 38,  color: T.blue },
+    { label: 'MFA Not Enrolled',    value: 4,   color: T.amber },
+    { label: 'High-Risk Users',     value: 3,   color: T.red },
     { label: 'Failed Logins (24h)', value: 7,   color: '#7c5cd8' },
     { label: 'New Joiners (7d)',    value: 6,   color: '#0ea5e9' },
   ]
@@ -329,27 +314,59 @@ function AdminSecurityView() {
   ]
 
   const SEVER_COLOR: Record<string, string> = {
-    info: '#3b82f6', warning: '#f59e0b', medium: '#f59e0b', high: '#ef4444',
+    info: T.blue, warning: T.amber, medium: T.amber, high: T.red,
   }
 
-  function Toggle({ label, sub, checked, onChange }: {
-    label: string; sub: string; checked: boolean; onChange: (v: boolean) => void
-  }) {
-    return (
-      <div style={s.policyRow}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: '0.87rem', fontWeight: 600, color: '#1f2328' }}>{label}</div>
-          <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.1rem' }}>{sub}</div>
-        </div>
-        <button
-          style={{ ...s.track, background: checked ? '#1a2e2a' : '#d1d5db' }}
-          onClick={() => onChange(!checked)}
-        >
-          <span style={{ ...s.thumb, transform: checked ? 'translateX(20px)' : 'translateX(2px)' }} />
-        </button>
-      </div>
-    )
-  }
+  const SECURITY_POLICIES = [
+    {
+      icon: '🔐',
+      title: 'Multi-Factor Authentication (MFA)',
+      description: 'All user accounts are required to enrol at least one second factor before completing sign-in. Supported methods include TOTP authenticator apps, push notifications, and hardware security keys.',
+      status: 'Enforced',
+      statusColor: T.green,
+      standard: 'NIST SP 800-63B',
+    },
+    {
+      icon: '⏱',
+      title: 'Session Inactivity Timeout',
+      description: 'Active sessions are automatically invalidated after 30 minutes of inactivity. Re-authentication is required to resume access, limiting exposure from unattended workstations.',
+      status: 'Active',
+      statusColor: T.green,
+      standard: 'ISO/IEC 27001 A.9.4',
+    },
+    {
+      icon: '🛡',
+      title: 'Adaptive Risk Engine',
+      description: 'Every sign-in is scored in real time using device fingerprint, geolocation, velocity, and behaviour signals. Sign-ins exceeding the risk threshold are blocked or routed to step-up authentication.',
+      status: 'Active',
+      statusColor: T.green,
+      standard: 'OWASP ASVS 2.2',
+    },
+    {
+      icon: '💸',
+      title: 'Step-Up MFA for High-Value Transfers',
+      description: 'Transactions above $100 trigger a mandatory second-factor challenge regardless of existing session state, providing an additional control layer against account-takeover fraud.',
+      status: 'Enforced',
+      statusColor: T.green,
+      standard: 'PSD2 SCA / PCI DSS 8.3',
+    },
+    {
+      icon: '🔑',
+      title: 'Password Complexity & Rotation',
+      description: 'Passwords must be a minimum of 12 characters, include mixed case, digits, and symbols. Passwords that appear in known breach corpuses (HIBP) are rejected at the point of creation.',
+      status: 'Enforced',
+      statusColor: T.green,
+      standard: 'NIST SP 800-63B §5.1',
+    },
+    {
+      icon: '📋',
+      title: 'Privileged Access Management (PAM)',
+      description: 'Admin and Manager roles are subject to just-in-time access provisioning. All privileged actions require step-up authentication and are immutably recorded in the security audit log.',
+      status: 'Enforced',
+      statusColor: T.green,
+      standard: 'CIS Control 5',
+    },
+  ]
 
   return (
     <>
@@ -361,7 +378,6 @@ function AdminSecurityView() {
         <span style={{ ...s.rolePill, ...s.pillAdmin }}>Admin</span>
       </div>
 
-      {/* Org stats strip */}
       <div style={s.orgStatsRow}>
         {orgStats.map(stat => (
           <div key={stat.label} style={s.orgStatCard}>
@@ -371,54 +387,58 @@ function AdminSecurityView() {
         ))}
       </div>
 
-      {/* Org score + alerts */}
       <div style={s.topRow}>
         <ScoreRing score={orgScore} />
         <AlertsCard alerts={orgAlerts} />
       </div>
 
-      {/* Security policy controls */}
       <div style={s.card}>
         <div style={s.cardTitle}>Security Policies</div>
-        <Toggle
-          label="Enforce MFA for all users"
-          sub="Any user without MFA enrolled cannot complete sign-in."
-          checked={mfaPolicy} onChange={setMfaPolicy}
-        />
-        <Toggle
-          label="Session timeout (30 min inactivity)"
-          sub="Automatically sign out users after 30 minutes of inactivity."
-          checked={sessionTimeout} onChange={setSessionTimeout}
-        />
-        <Toggle
-          label="Adaptive risk engine"
-          sub="Block or step-up authenticate sign-ins that exceed the risk threshold."
-          checked={riskEngine} onChange={setRiskEngine}
-        />
-        <Toggle
-          label="Step-up MFA for high-value transfers"
-          sub="Transfers above $100 require a second-factor challenge."
-          checked={stepUpHighRisk} onChange={setStepUpHighRisk}
-        />
-        <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #f3f4f6' }}>
-          <button style={s.saveBtn}>Save Policy Changes</button>
+        <div style={{ fontSize: '0.8rem', color: T.inkSub, marginBottom: '1.25rem' }}>
+          The following policies are centrally enforced by the platform. They apply to all users and cannot be overridden at the individual account level.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+          {SECURITY_POLICIES.map(policy => (
+            <div key={policy.title} style={{
+              background: T.bgMuted, border: `1px solid ${T.border}`,
+              borderRadius: '10px', padding: '1rem 1.1rem',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '1rem' }}>{policy.icon}</span>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: T.ink }}>{policy.title}</div>
+                </div>
+                <span style={{
+                  fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.55rem',
+                  borderRadius: '999px', background: policy.statusColor + '18',
+                  color: policy.statusColor, border: `1px solid ${policy.statusColor}33`,
+                  flexShrink: 0, marginLeft: '0.5rem',
+                }}>{policy.status}</span>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: T.inkSub, lineHeight: 1.55, marginBottom: '0.6rem' }}>
+                {policy.description}
+              </div>
+              <div style={{ fontSize: '0.68rem', color: T.inkLight, fontWeight: 600, letterSpacing: '0.03em' }}>
+                Standard: {policy.standard}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Tenant SSO / SCIM status */}
       <div style={s.card}>
         <div style={s.cardTitle}>Identity Provider Status</div>
         <div style={s.idpGrid}>
           {[
-            { label: 'SSO (OIDC)',        status: 'Active',      color: '#10b981' },
-            { label: 'SCIM Provisioning', status: 'Active',      color: '#10b981' },
-            { label: 'MFA Enforcement',   status: mfaPolicy ? 'Enforced' : 'Off', color: mfaPolicy ? '#10b981' : '#ef4444' },
-            { label: 'Risk Engine',       status: riskEngine ? 'Active' : 'Off',  color: riskEngine ? '#10b981' : '#ef4444' },
+            { label: 'SSO (OIDC)',        status: 'Active',    color: T.green },
+            { label: 'SCIM Provisioning', status: 'Active',    color: T.green },
+            { label: 'MFA Enforcement',   status: 'Enforced',  color: T.green },
+            { label: 'Risk Engine',       status: 'Active',    color: T.green },
           ].map(item => (
             <div key={item.label} style={s.idpCard}>
               <div style={{ ...s.idpDot, background: item.color }} />
               <div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1f2328' }}>{item.label}</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: T.ink }}>{item.label}</div>
                 <div style={{ fontSize: '0.75rem', color: item.color, fontWeight: 700, marginTop: '0.1rem' }}>{item.status}</div>
               </div>
             </div>
@@ -426,7 +446,6 @@ function AdminSecurityView() {
         </div>
       </div>
 
-      {/* Security audit log */}
       <div style={s.card}>
         <div style={s.cardTitleRow}>
           <div style={s.cardTitle}>Security Audit Log</div>
@@ -440,11 +459,11 @@ function AdminSecurityView() {
           </tr></thead>
           <tbody>
             {auditLog.map((row, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f7f8fa' }}>
-                <td style={{ ...s.td, color: '#9ca3af', fontSize: '0.79rem' }}>{row.time}</td>
+              <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
+                <td style={{ ...s.td, color: T.inkSub, fontSize: '0.79rem' }}>{row.time}</td>
                 <td style={{ ...s.td, fontSize: '0.83rem' }}>{row.actor}</td>
                 <td style={{ ...s.td, fontSize: '0.83rem', fontWeight: 500 }}>{row.action}</td>
-                <td style={{ ...s.td, fontSize: '0.8rem', color: '#57606a' }}>{row.target}</td>
+                <td style={{ ...s.td, fontSize: '0.8rem', color: T.inkSub }}>{row.target}</td>
                 <td style={s.td}>
                   <span style={{ ...s.badge,
                     color: SEVER_COLOR[row.severity],
@@ -477,87 +496,87 @@ export default function SecurityCenterPage() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
-  root:       { fontFamily: '-apple-system,"Segoe UI",system-ui,sans-serif' },
+  root:       { fontFamily: T.fontFamily },
   pageHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' },
-  pageTitle:  { fontSize: '1.4rem', fontWeight: 700, color: '#1a2e2a', margin: 0 },
-  pageSub:    { fontSize: '0.82rem', color: '#57606a', marginTop: '0.25rem', maxWidth: '560px' },
+  pageTitle:  { fontSize: '1.5rem', fontWeight: 800, color: T.ink, margin: 0, letterSpacing: '-0.02em' },
+  pageSub:    { fontSize: '0.82rem', color: T.inkSub, marginTop: '0.25rem', maxWidth: '560px' },
 
   // Role pill
   rolePill:     { fontSize: '0.72rem', fontWeight: 700, padding: '0.3rem 0.9rem', borderRadius: '999px', border: '1px solid', flexShrink: 0, marginTop: '0.2rem' },
-  pillCustomer: { background: '#eff6ff', color: '#2563eb', borderColor: '#bfdbfe' },
-  pillManager:  { background: '#f5f3ff', color: '#7c3aed', borderColor: '#ddd6fe' },
-  pillAdmin:    { background: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa' },
+  pillCustomer: { background: T.blueLight, color: T.blue, borderColor: T.blue + '44' },
+  pillManager:  { background: '#3b1fa833', color: '#a78bfa', borderColor: '#7c3aed44' },
+  pillAdmin:    { background: T.amberLight, color: T.amber, borderColor: T.amberBorder },
 
   topRow:  { display: 'flex', gap: '1.25rem', marginBottom: '1.25rem', alignItems: 'flex-start' },
 
   // Score ring
-  scoreCard:   { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '1.5rem', textAlign: 'center', minWidth: '170px' },
-  scoreLabel:  { fontSize: '0.78rem', fontWeight: 700, color: '#57606a', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: '1rem' },
+  scoreCard:   { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '1.5rem', textAlign: 'center', minWidth: '170px', boxShadow: T.shadowCard },
+  scoreLabel:  { fontSize: '0.65rem', fontWeight: 700, color: T.inkSub, textTransform: 'uppercase' as const, letterSpacing: '0.09em', marginBottom: '1rem' },
   scoreRing:   { position: 'relative' as const, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
-  scoreNum:    { position: 'absolute' as const, fontSize: '1.25rem', fontWeight: 800, color: '#1a2e2a' },
-  scoreStatus: { marginTop: '0.75rem', fontWeight: 700, fontSize: '0.9rem', color: '#1a2e2a' },
+  scoreNum:    { position: 'absolute' as const, fontSize: '1.25rem', fontWeight: 800, color: T.ink },
+  scoreStatus: { marginTop: '0.75rem', fontWeight: 700, fontSize: '0.9rem', color: T.ink },
 
   // Shared card
-  card:        { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.25rem' },
-  cardTitle:   { fontSize: '0.9rem', fontWeight: 700, color: '#1a2e2a', marginBottom: '1rem' },
+  card:        { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusCard, padding: '1.25rem 1.5rem', marginBottom: '1.25rem', boxShadow: T.shadowCard },
+  cardTitle:   { fontSize: '0.9rem', fontWeight: 700, color: T.ink, marginBottom: '1rem', letterSpacing: '-0.01em' },
   cardTitleRow:{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' },
-  empty:       { fontSize: '0.85rem', color: '#57606a', padding: '0.5rem 0' },
+  empty:       { fontSize: '0.85rem', color: T.inkSub, padding: '0.5rem 0' },
 
   // Alerts
-  alertRow:    { display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.75rem 0', borderBottom: '1px solid #f3f4f6' },
+  alertRow:    { display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.75rem 0', borderBottom: `1px solid ${T.borderLight}` },
   alertDot:    { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, marginTop: '5px' },
-  alertTitle:  { fontSize: '0.87rem', fontWeight: 600, color: '#1f2328' },
-  alertDetail: { fontSize: '0.78rem', color: '#57606a', marginTop: '0.15rem' },
+  alertTitle:  { fontSize: '0.87rem', fontWeight: 600, color: T.ink },
+  alertDetail: { fontSize: '0.78rem', color: T.inkSub, marginTop: '0.15rem' },
   badge:       { fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '999px', textTransform: 'capitalize' as const, flexShrink: 0, marginTop: '2px' },
 
   // Auth methods (Customer)
   methodsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: '1rem' },
-  methodCard:  { border: '1px solid #e5e7eb', borderRadius: '10px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' },
+  methodCard:  { border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', background: T.bgCard },
   methodTop:   { display: 'flex', justifyContent: 'flex-end' },
   enrolledBadge:{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '999px' },
-  enrolledOn:  { background: '#dcfce7', color: '#16a34a' },
-  enrolledOff: { background: '#f3f4f6', color: '#9ca3af' },
-  methodName:  { fontSize: '0.88rem', fontWeight: 700, color: '#1f2328' },
-  methodDesc:  { fontSize: '0.75rem', color: '#57606a', lineHeight: 1.4, flex: 1 },
-  enrollBtn:   { marginTop: '0.5rem', padding: '0.4rem 0.75rem', background: '#1a2e2a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, alignSelf: 'flex-start' as const },
+  enrolledOn:  { background: T.greenLight, color: T.green },
+  enrolledOff: { background: T.bgMuted, color: T.inkSub },
+  methodName:  { fontSize: '0.88rem', fontWeight: 700, color: T.ink },
+  methodDesc:  { fontSize: '0.75rem', color: T.inkSub, lineHeight: 1.4, flex: 1 },
+  enrollBtn:   { marginTop: '0.5rem', padding: '0.4rem 0.85rem', background: T.amber, color: '#0d1117', border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, alignSelf: 'flex-start' as const },
 
   // Devices
-  deviceList:     { display: 'flex', flexDirection: 'column', gap: '0.75rem' },
-  deviceRow:      { display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: '#f7f8fa', borderRadius: '8px' },
-  deviceName:     { fontSize: '0.87rem', fontWeight: 600, color: '#1f2328' },
-  deviceMeta:     { fontSize: '0.75rem', color: '#57606a', marginTop: '0.1rem' },
-  trustedBadge:   { fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '999px' },
-  untrustedBadge: { fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '999px' },
-  revokeBtn:      { padding: '0.3rem 0.7rem', background: 'transparent', border: '1px solid #fecaca', color: '#dc2626', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 },
+  deviceList:     { display: 'flex', flexDirection: 'column', gap: '0.65rem' },
+  deviceRow:      { display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: T.bgMuted, borderRadius: '10px', border: `1px solid ${T.border}` },
+  deviceName:     { fontSize: '0.87rem', fontWeight: 600, color: T.ink },
+  deviceMeta:     { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.1rem' },
+  trustedBadge:   { fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}`, borderRadius: '999px' },
+  untrustedBadge: { fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', background: T.redLight, color: T.red, border: `1px solid ${T.redBorder}`, borderRadius: '999px' },
+  revokeBtn:      { padding: '0.3rem 0.7rem', background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 },
 
   // Manager — team stats
   statsGrid:   { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '0.9rem' },
-  statTile:    { background: '#f9fafb', border: '1px solid #f3f4f6', borderRadius: '8px', padding: '0.85rem' },
+  statTile:    { background: T.bgMuted, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '0.85rem' },
   statVal:     { fontSize: '1.6rem', fontWeight: 800, lineHeight: 1 },
-  statLbl:     { fontSize: '0.75rem', color: '#57606a', marginTop: '0.4rem', fontWeight: 500 },
-  actionBtn:   { padding: '0.3rem 0.65rem', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', cursor: 'pointer', fontSize: '0.77rem', fontWeight: 600, color: '#1a2e2a' },
+  statLbl:     { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.4rem', fontWeight: 500 },
+  actionBtn:   { padding: '0.3rem 0.75rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.77rem', fontWeight: 600, color: T.ink },
 
   // Admin — org stats strip
   orgStatsRow: { display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: '0.65rem', marginBottom: '1.25rem' },
-  orgStatCard: { background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', padding: '0.75rem 1rem' },
+  orgStatCard: { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '0.75rem 1rem', boxShadow: T.shadowCard },
   orgStatVal:  { fontSize: '1.55rem', fontWeight: 700, lineHeight: 1 },
-  orgStatLbl:  { fontSize: '0.68rem', color: '#9ca3af', marginTop: '0.3rem', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
+  orgStatLbl:  { fontSize: '0.65rem', color: T.inkLight, marginTop: '0.3rem', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.07em' },
 
   // Admin — policy toggles
-  policyRow:  { display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.85rem 0', borderBottom: '1px solid #f3f4f6' },
+  policyRow:  { display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.85rem 0', borderBottom: `1px solid ${T.borderLight}` },
   track:      { width: '44px', height: '24px', borderRadius: '999px', border: 'none', cursor: 'pointer', position: 'relative' as const, padding: 0, flexShrink: 0, transition: 'background 0.2s' },
   thumb:      { position: 'absolute' as const, top: '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'transform 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' },
-  saveBtn:    { padding: '0.5rem 1.1rem', background: '#1a2e2a', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.84rem' },
-  exportBtn:  { padding: '0.35rem 0.8rem', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, color: '#57606a' },
+  saveBtn:    { padding: '0.5rem 1.2rem', background: T.ink, color: T.bg, border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontWeight: 700, fontSize: '0.84rem' },
+  exportBtn:  { padding: '0.35rem 0.8rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, color: T.inkSub },
 
   // Admin — IDP status grid
   idpGrid:    { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.75rem' },
-  idpCard:    { display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.85rem', background: '#f9fafb', borderRadius: '8px', border: '1px solid #f3f4f6' },
+  idpCard:    { display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.85rem', background: T.bgMuted, borderRadius: T.radiusInner, border: `1px solid ${T.border}` },
   idpDot:     { width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0 },
 
   // Shared table
   table:      { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.83rem' },
-  th:         { textAlign: 'left' as const, padding: '0.6rem 0.75rem', color: '#57606a', fontSize: '0.72rem', fontWeight: 700, borderBottom: '1px solid #e5e7eb', textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
-  td:         { padding: '0.7rem 0.75rem', color: '#1f2328', borderBottom: '1px solid #f3f4f6' },
+  th:         { textAlign: 'left' as const, padding: '0.6rem 0.75rem', color: T.inkSub, fontSize: '0.68rem', fontWeight: 700, borderBottom: `1px solid ${T.border}`, textTransform: 'uppercase' as const, letterSpacing: '0.07em' },
+  td:         { padding: '0.7rem 0.75rem', color: T.ink, borderBottom: `1px solid ${T.borderLight}` },
   statusBadge:{ fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '999px' },
 }

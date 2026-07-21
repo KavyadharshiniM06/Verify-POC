@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import { T } from '../styles/theme'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -386,7 +387,7 @@ export default function AdminPage() {
 
                 {/* ── Edit row ────────────────────────────── */}
                 {editingId === u.id && (
-                  <tr style={{ ...s.tr, background: '#f0f9ff' }}>
+                  <tr style={{ ...s.tr, background: T.bgHighlight }}>
                     <td style={s.td}>
                       <input style={s.inlineInput} value={editForm.name}
                         placeholder="Full name"
@@ -445,9 +446,9 @@ export default function AdminPage() {
                                   <span style={s.factorName}>{label}</span>
                                   <span style={{
                                     ...s.factorBadge,
-                                    background: enrolled ? '#f0fdf4' : '#f7f8fa',
-                                    color: enrolled ? '#16a34a' : '#6b7280',
-                                    border: `1px solid ${enrolled ? '#86efac' : '#e5e7eb'}`,
+                                    background: enrolled ? T.greenLight : T.bgMuted,
+                                    color: enrolled ? T.green : T.inkSub,
+                                    border: `1px solid ${enrolled ? T.greenBorder : T.border}`,
                                   }}>
                                     {enrolled ? '✓ Enrolled' : 'Not enrolled'}
                                   </span>
@@ -501,14 +502,14 @@ export default function AdminPage() {
 // ── Style helpers ─────────────────────────────────────────────────────────────
 
 function roleColor(role: string) {
-  return role === 'Admin' ? '#7c3aed' : role === 'Manager' ? '#0891b2' : '#3b82d4'
+  return role === 'Admin' ? T.amber : role === 'Manager' ? T.blue : T.inkSub
 }
 
 function roleBadgeStyle(role: string): React.CSSProperties {
   const map: Record<string, React.CSSProperties> = {
-    Admin:    { background: '#f5f3ff', color: '#6d28d9', borderColor: '#ddd6fe' },
-    Manager:  { background: '#ecfeff', color: '#0e7490', borderColor: '#a5f3fc' },
-    Customer: { background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' },
+    Admin:    { background: T.amberLight,  color: T.amber, borderColor: T.amberBorder },
+    Manager:  { background: T.blueLight,   color: T.blue,  borderColor: T.blue + '44'  },
+    Customer: { background: T.bgMuted,     color: T.inkSub, borderColor: T.border },
   }
   return map[role] ?? map.Customer
 }
@@ -520,130 +521,131 @@ const s: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
     marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap',
   },
-  heading: { margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 700, color: '#1f2328' },
-  sub: { margin: 0, fontSize: '0.875rem', color: '#57606a' },
+  heading: { margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 700, color: T.ink },
+  sub: { margin: 0, fontSize: '0.875rem', color: T.inkSub },
   okBox: {
-    background: '#f0fdf4', border: '1px solid #86efac', color: '#16a34a',
-    borderRadius: '8px', padding: '0.7rem 1rem', fontSize: '0.85rem', marginBottom: '0.75rem',
+    background: T.greenLight, border: `1px solid ${T.greenBorder}`, color: T.green,
+    borderRadius: T.radiusInner, padding: '0.7rem 1rem', fontSize: '0.85rem', marginBottom: '0.75rem',
   },
   errBox: {
-    background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
-    borderRadius: '8px', padding: '0.7rem 1rem', fontSize: '0.85rem', marginBottom: '0.75rem',
+    background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red,
+    borderRadius: T.radiusInner, padding: '0.7rem 1rem', fontSize: '0.85rem', marginBottom: '0.75rem',
   },
   // Create form
   createCard: {
-    background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px',
+    background: T.bgHighlight, border: `1px solid ${T.blue}44`, borderRadius: T.radiusCard,
     padding: '1.25rem 1.5rem', marginBottom: '1.25rem',
   },
-  cardTitle: { margin: '0 0 0.875rem', fontSize: '0.95rem', fontWeight: 700, color: '#1f2328' },
+  cardTitle: { margin: '0 0 0.875rem', fontSize: '0.95rem', fontWeight: 700, color: T.ink },
   formRow: { display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start' },
   formGroup: { display: 'flex', flexDirection: 'column', flex: '1 1 160px', minWidth: '140px' },
-  label: { fontSize: '0.75rem', fontWeight: 600, color: '#57606a', marginBottom: '0.3rem' },
+  label: { fontSize: '0.75rem', fontWeight: 600, color: T.inkSub, marginBottom: '0.3rem' },
   input: {
-    padding: '0.5rem 0.65rem', border: '1px solid #d1d5db', borderRadius: '6px',
-    fontSize: '0.875rem', boxSizing: 'border-box' as const,
+    padding: '0.5rem 0.65rem', border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    fontSize: '0.875rem', boxSizing: 'border-box' as const, background: T.bgInput, color: T.ink,
   },
   select: {
-    padding: '0.5rem 0.65rem', border: '1px solid #d1d5db', borderRadius: '6px',
-    fontSize: '0.875rem', background: '#fff', boxSizing: 'border-box' as const,
+    padding: '0.5rem 0.65rem', border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    fontSize: '0.875rem', background: T.bgInput, color: T.ink, boxSizing: 'border-box' as const,
   },
-  hint: { margin: '0.75rem 0 0', fontSize: '0.78rem', color: '#57606a' },
+  hint: { margin: '0.75rem 0 0', fontSize: '0.78rem', color: T.inkSub },
   // Search
   searchRow: { display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.875rem' },
   searchInput: {
-    flex: '1 1 220px', padding: '0.5rem 0.75rem', border: '1px solid #d1d5db',
-    borderRadius: '6px', fontSize: '0.875rem',
+    flex: '1 1 220px', padding: '0.5rem 0.75rem', border: `1px solid ${T.border}`,
+    borderRadius: T.radiusInput, fontSize: '0.875rem', background: T.bgInput, color: T.ink,
   },
   searchBtn: {
-    padding: '0.5rem 1rem', background: '#3b82d4', color: '#fff',
-    border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
+    padding: '0.5rem 1rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem',
   },
   clearBtn: {
-    padding: '0.5rem 0.75rem', background: '#f7f8fa', color: '#57606a',
-    border: '1px solid #e5e7eb', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem',
+    padding: '0.5rem 0.75rem', background: T.bgMuted, color: T.inkSub,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.85rem',
   },
   // Table
   tableWrap: {
-    background: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px',
-    overflow: 'hidden',
+    background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusCard,
+    overflow: 'hidden', boxShadow: T.shadowCard,
   },
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.875rem' },
   th: {
-    padding: '0.7rem 1rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700,
-    color: '#57606a', background: '#f7f8fa', borderBottom: '1px solid #e5e7eb',
+    padding: '0.7rem 1rem', textAlign: 'left' as const, fontSize: '0.68rem', fontWeight: 700,
+    color: T.inkSub, background: T.bgMuted, borderBottom: `1px solid ${T.border}`,
     textTransform: 'uppercase' as const, letterSpacing: '0.05em',
   },
-  tr: { borderBottom: '1px solid #f0f0f0' },
-  td: { padding: '0.7rem 1rem', verticalAlign: 'middle' },
-  emptyCell: { padding: '2.5rem', textAlign: 'center', color: '#57606a', fontSize: '0.875rem' },
+  tr: { borderBottom: `1px solid ${T.borderLight}` },
+  td: { padding: '0.7rem 1rem', verticalAlign: 'middle' as const, color: T.ink },
+  emptyCell: { padding: '2.5rem', textAlign: 'center' as const, color: T.inkSub, fontSize: '0.875rem' },
   nameCell: { display: 'flex', alignItems: 'center', gap: '0.6rem' },
   avatar: {
-    width: '30px', height: '30px', borderRadius: '50%', color: '#fff', flexShrink: 0,
+    width: '30px', height: '30px', borderRadius: '50%', color: '#0d1117', flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontSize: '0.8rem', fontWeight: 700,
   },
-  userName: { fontWeight: 600, color: '#1f2328', fontSize: '0.875rem' },
-  emailText: { color: '#57606a', fontSize: '0.82rem' },
+  userName: { fontWeight: 600, color: T.ink, fontSize: '0.875rem' },
+  emailText: { color: T.inkSub, fontSize: '0.82rem' },
   badge: {
     display: 'inline-block', fontSize: '0.72rem', fontWeight: 600,
     padding: '0.15rem 0.5rem', borderRadius: '999px', border: '1px solid',
   },
-  activeBadge:   { background: '#f0fdf4', color: '#16a34a', borderColor: '#86efac' },
-  disabledBadge: { background: '#f9fafb', color: '#6b7280', borderColor: '#e5e7eb' },
+  activeBadge:   { background: T.greenLight, color: T.green, borderColor: T.greenBorder },
+  disabledBadge: { background: T.bgMuted, color: T.inkSub, borderColor: T.border },
   actionRow: { display: 'flex', gap: '0.4rem', flexWrap: 'wrap' as const },
   actionBtn: {
-    padding: '0.3rem 0.6rem', background: '#f7f8fa', border: '1px solid #e5e7eb',
-    borderRadius: '5px', cursor: 'pointer', fontSize: '0.78rem', color: '#1f2328',
+    padding: '0.3rem 0.6rem', background: T.bgMuted, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusInner, cursor: 'pointer', fontSize: '0.78rem', color: T.ink,
     whiteSpace: 'nowrap' as const,
   },
   warnBtn: {
-    padding: '0.3rem 0.6rem', background: '#fffbeb', border: '1px solid #fcd34d',
-    borderRadius: '5px', cursor: 'pointer', fontSize: '0.78rem', color: '#92400e',
+    padding: '0.3rem 0.6rem', background: T.amberLight, border: `1px solid ${T.amberBorder}`,
+    borderRadius: T.radiusInner, cursor: 'pointer', fontSize: '0.78rem', color: T.amber,
     whiteSpace: 'nowrap' as const,
   },
   dangerBtn: {
-    padding: '0.3rem 0.6rem', background: '#fef2f2', border: '1px solid #fecaca',
-    borderRadius: '5px', cursor: 'pointer', fontSize: '0.78rem', color: '#dc2626',
+    padding: '0.3rem 0.6rem', background: T.redLight, border: `1px solid ${T.redBorder}`,
+    borderRadius: T.radiusInner, cursor: 'pointer', fontSize: '0.78rem', color: T.red,
     whiteSpace: 'nowrap' as const,
   },
   primaryBtn: {
-    padding: '0.45rem 0.9rem', background: '#3b82d4', color: '#fff',
-    border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600,
+    padding: '0.45rem 0.9rem', background: T.amber, color: '#0d1117',
+    border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontWeight: 600,
     fontSize: '0.85rem', whiteSpace: 'nowrap' as const,
   },
   inlineInput: {
-    width: '100%', padding: '0.4rem 0.5rem', border: '1px solid #bae6fd',
-    borderRadius: '5px', fontSize: '0.85rem', boxSizing: 'border-box' as const,
+    width: '100%', padding: '0.4rem 0.5rem', border: `1px solid ${T.blue}44`,
+    borderRadius: T.radiusInput, fontSize: '0.85rem', boxSizing: 'border-box' as const,
+    background: T.bgInput, color: T.ink,
   },
   inlineSelect: {
-    width: '100%', padding: '0.4rem 0.5rem', border: '1px solid #bae6fd',
-    borderRadius: '5px', fontSize: '0.85rem', background: '#fff',
+    width: '100%', padding: '0.4rem 0.5rem', border: `1px solid ${T.blue}44`,
+    borderRadius: T.radiusInput, fontSize: '0.85rem', background: T.bgInput, color: T.ink,
     boxSizing: 'border-box' as const,
   },
   // Factor panel
   factorPanel: {
-    background: '#fafafa', padding: '0.875rem 1.25rem',
-    borderBottom: '1px solid #e5e7eb', borderTop: '1px solid #e5e7eb',
+    background: T.bgMuted, padding: '0.875rem 1.25rem',
+    borderBottom: `1px solid ${T.border}`, borderTop: `1px solid ${T.border}`,
   },
   factorPanelHeader: { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' },
-  factorPanelTitle: { fontSize: '0.85rem', fontWeight: 700, color: '#1f2328' },
-  factorLoading: { fontSize: '0.8rem', color: '#57606a', fontStyle: 'italic' },
+  factorPanelTitle: { fontSize: '0.85rem', fontWeight: 700, color: T.ink },
+  factorLoading: { fontSize: '0.8rem', color: T.inkSub, fontStyle: 'italic' },
   factorGrid: { display: 'flex', gap: '0.6rem', flexWrap: 'wrap' as const },
   factorTile: {
-    background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px',
+    background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner,
     padding: '0.6rem 0.875rem', minWidth: '120px', display: 'flex',
     flexDirection: 'column', gap: '0.4rem',
   },
   factorTileTop: { display: 'flex', flexDirection: 'column', gap: '0.25rem' },
-  factorName: { fontSize: '0.8rem', fontWeight: 700, color: '#1f2328' },
+  factorName: { fontSize: '0.8rem', fontWeight: 700, color: T.ink },
   factorBadge: {
     display: 'inline-block', fontSize: '0.72rem', fontWeight: 600,
     padding: '0.12rem 0.4rem', borderRadius: '999px', whiteSpace: 'nowrap' as const,
   },
   unenrollBtn: {
-    padding: '0.2rem 0.4rem', background: '#fff', border: '1px solid #fecaca',
-    color: '#dc2626', borderRadius: '4px', cursor: 'pointer', fontSize: '0.72rem',
-    alignSelf: 'flex-start',
+    padding: '0.2rem 0.4rem', background: T.redLight, border: `1px solid ${T.redBorder}`,
+    color: T.red, borderRadius: T.radiusInner, cursor: 'pointer', fontSize: '0.72rem',
+    alignSelf: 'flex-start' as const,
   },
   // Pagination
   pagination: {
@@ -651,8 +653,8 @@ const s: Record<string, React.CSSProperties> = {
     gap: '1rem', marginTop: '1rem',
   },
   pageBtn: {
-    padding: '0.4rem 0.875rem', background: '#f7f8fa', border: '1px solid #e5e7eb',
-    borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', color: '#1f2328',
+    padding: '0.4rem 0.875rem', background: T.bgMuted, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.85rem', color: T.ink,
   },
-  pageInfo: { fontSize: '0.85rem', color: '#57606a' },
+  pageInfo: { fontSize: '0.85rem', color: T.inkSub },
 }

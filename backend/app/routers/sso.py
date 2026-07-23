@@ -105,10 +105,14 @@ def _build_authorize_url(
             # prompt=login combined with id_token_hint forces IBM Verify to
             # re-challenge the second factor even when the existing session
             # already satisfies the ACR policy — prevents silent token reuse.
+            # NOTE: if the hint sub does not match the active IBM Verify session,
+            # IBM Verify returns CSIAQ5066E. The frontend must only send a hint
+            # it received from the most recent IBM Verify token response.
             params["id_token_hint"] = id_token_hint
-            
         else:
-            # No hint available — use max_age=0 to force re-verification.
+            # No hint available — use max_age=0 to force re-authentication.
+            # This is the safe fallback: IBM Verify will show the full login page
+            # but will not error on a mismatched hint.
             params["max_age"] = "0"
     if acr_values:
         params["acr_values"] = acr_values

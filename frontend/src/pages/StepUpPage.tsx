@@ -46,18 +46,29 @@ export default function StepUpPage() {
     }
   }
 
-  async function initiateRedirect() {
+  async function initiateRedirect(retryWithoutHint = false) {
     setPhase('redirecting')
     try {
-      const idTokenHint = sessionStorage.getItem('mb_ibm_id_token') ?? ''
-      const { data } = await api.post('/auth/sso/stepup/initiate', {
-        return_to: returnTo,
-        id_token_hint: idTokenHint,
-      })
+      // Only send id_token_hint if we actually have a stored IBM token.
+      // Sending an empty string or a stale token causes IBM Verify CSIAQ5066E
+      // (subject mismatch). When absent, the backend falls back to max_age=0
+      // which forces re-authentication without a hint.
+      const storedHint = sessionStorage.getItem('mb_ibm_id_token') ?? ''
+      const body: Record<string, string> = { return_to: returnTo }
+      if (storedHint && !retryWithoutHint) body.id_token_hint = storedHint
+      const { data } = await api.post('/auth/sso/stepup/initiate', body)
       sessionStorage.setItem('mb_stepup_token', data.step_up_token)
       sessionStorage.setItem('mb_stepup_return_to', returnTo)
       window.location.href = data.authorization_url
-    } catch {
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail ?? ''
+      // CSIAQ5066E = stale id_token_hint subject mismatch — clear and retry once
+      if (!retryWithoutHint && msg.includes('CSIAQ5066E')) {
+        sessionStorage.removeItem('mb_ibm_id_token')
+        void initiateRedirect(true)
+        return
+      }
       setErrorMsg('Could not start verification challenge. Please try again.')
       setPhase('error')
     }

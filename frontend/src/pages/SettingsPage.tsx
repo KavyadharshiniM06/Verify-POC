@@ -1,11 +1,14 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import api from '../api/axios'
 import { T } from '../styles/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Section =
   | 'profile'
   | 'security'
+  | 'identity'
   | 'notifications'
   | 'preferences'
   | 'organization'
@@ -107,12 +110,13 @@ function InfoBanner({ icon, text }: { icon: string; text: string }) {
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 const NAV_ALL: { id: Section; label: string; icon: string; roles: string[] }[] = [
-  { id: 'profile',       label: 'Profile',       icon: '👤', roles: ['Customer','Manager','Admin'] },
-  { id: 'security',      label: 'Security',       icon: '🔒', roles: ['Customer','Manager','Admin'] },
-  { id: 'notifications', label: 'Notifications',  icon: '🔔', roles: ['Customer','Manager','Admin'] },
-  { id: 'preferences',   label: 'Preferences',    icon: '🎛', roles: ['Customer','Manager','Admin'] },
-  { id: 'organization',  label: 'Organization',   icon: '🏢', roles: ['Manager','Admin'] },
-  { id: 'developers',    label: 'Developers',     icon: '⚙️', roles: ['Manager','Admin'] },
+  { id: 'profile',       label: 'Profile',        icon: '👤', roles: ['Customer','Manager','Admin'] },
+  { id: 'security',      label: 'Security',        icon: '🔒', roles: ['Customer','Manager','Admin'] },
+  { id: 'identity',      label: 'Identity',        icon: '🪪', roles: ['Customer','Manager','Admin'] },
+  { id: 'notifications', label: 'Notifications',   icon: '🔔', roles: ['Customer','Manager','Admin'] },
+  { id: 'preferences',   label: 'Preferences',     icon: '🎛', roles: ['Customer','Manager','Admin'] },
+  { id: 'organization',  label: 'Organization',    icon: '🏢', roles: ['Manager','Admin'] },
+  { id: 'developers',    label: 'Developers',      icon: '⚙️', roles: ['Manager','Admin'] },
 ]
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -184,6 +188,7 @@ export default function SettingsPage() {
         <div style={s.content}>
           {activeSection === 'profile'       && <ProfileSection       user={user} role={role} showToast={showToast} />}
           {activeSection === 'security'      && <SecuritySection      role={role} showToast={showToast} />}
+          {activeSection === 'identity'      && <IdentitySection      showToast={showToast} />}
           {activeSection === 'notifications' && <NotificationsSection role={role} showToast={showToast} />}
           {activeSection === 'preferences'   && <PreferencesSection   showToast={showToast} />}
           {activeSection === 'organization'  && <OrganizationSection  role={role} showToast={showToast} />}
@@ -198,8 +203,9 @@ export default function SettingsPage() {
 function ProfileSection({ user, role, showToast }: {
   user: { name: string; email: string; role: string } | null
   role: string
-  showToast: (m: string) => void
+  showToast: (m: string, kind?: 'success' | 'error') => void
 }) {
+  const { token, login } = useAuth()
   const [name,     setName]     = useState(user?.name  ?? '')
   const [email,    setEmail]    = useState(user?.email ?? '')
   const [phone,    setPhone]    = useState('+1 (555) 012-3456')
@@ -208,9 +214,18 @@ function ProfileSection({ user, role, showToast }: {
   const [dept,     setDept]     = useState(role === 'Admin' ? 'IT & Identity Management' : role === 'Manager' ? 'Retail Banking' : '')
   const [saving,   setSaving]   = useState(false)
 
-  const save = () => {
+  const save = async () => {
     setSaving(true)
-    setTimeout(() => { setSaving(false); showToast('Profile updated successfully.') }, 800)
+    try {
+      const { data } = await api.put('/users/me', { name, email })
+      // Refresh in-session user so nav/header reflects new name immediately
+      login(token!, { name: data.name, email: data.email, role: data.role })
+      showToast('Profile updated successfully.')
+    } catch {
+      showToast('Failed to save profile. Please try again.', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -282,6 +297,164 @@ function ProfileSection({ user, role, showToast }: {
 }
 
 // ─── Security ─────────────────────────────────────────────────────────────────
+
+// ─── Identity (self-service: enrolled factors + account deletion) ─────────────
+interface EnrolledFactors { fido2: boolean; totp: boolean; push: boolean; email_otp: boolean; sso: boolean }
+interface MeResponse { id: string; email: string; name: string; role: string; enrolled_factors: EnrolledFactors }
+type PendingIdentityAction = { type: 'delete_account' } | { type: 'unenroll'; factor: string }
+const PENDING_IDENTITY_KEY = 'mb_pending_identity_action'
+
+function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success' | 'error') => void }) {
+  const { stepupVerified, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const [factors, setFactors]           = useState<EnrolledFactors | null>(null)
+  const [loadingFactors, setLoading]    = useState(true)
+
+  const loadFactors = () => {
+    setLoading(true)
+    api.get<MeResponse>('/users/me')
+      .then(({ data }) => setFactors(data.enrolled_factors))
+      .catch(() => setFactors(null))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadFactors() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resume a pending action after returning from step-up
+  useEffect(() => {
+    if (!stepupVerified) return
+    const raw = sessionStorage.getItem(PENDING_IDENTITY_KEY)
+    if (!raw) return
+    const action: PendingIdentityAction = JSON.parse(raw)
+    sessionStorage.removeItem(PENDING_IDENTITY_KEY)
+    if (action.type === 'delete_account') void executeDeleteAccount()
+    else if (action.type === 'unenroll') void executeUnenroll(action.factor)
+  }, [stepupVerified]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function requireStepUp(action: PendingIdentityAction) {
+    sessionStorage.setItem(PENDING_IDENTITY_KEY, JSON.stringify(action))
+    navigate('/stepup?return_to=/settings')
+  }
+
+  async function executeUnenroll(factor: string) {
+    try {
+      const { data } = await api.get<MeResponse>('/users/me')
+      await api.delete(`/users/${encodeURIComponent(data.id)}/factors/${factor}`)
+      showToast(`${factor} has been unenrolled.`)
+      loadFactors()
+    } catch {
+      showToast(`Failed to unenroll ${factor}. Please try again.`, 'error')
+    }
+  }
+
+  function handleUnenroll(factor: string) {
+    if (!window.confirm(`Remove your ${factor} authenticator? This cannot be undone without re-enrolling.`)) return
+    if (!stepupVerified) { requireStepUp({ type: 'unenroll', factor }); return }
+    void executeUnenroll(factor)
+  }
+
+  async function executeDeleteAccount() {
+    const confirmed = window.prompt('This is irreversible. Type DELETE to confirm account deletion.')
+    if (confirmed !== 'DELETE') { showToast('Account deletion cancelled.', 'error'); return }
+    try {
+      await api.delete('/users/me')
+      logout()
+      navigate('/', { replace: true })
+    } catch {
+      showToast('Account deletion failed. Please try again.', 'error')
+    }
+  }
+
+  function handleDeleteAccount() {
+    if (!stepupVerified) { requireStepUp({ type: 'delete_account' }); return }
+    void executeDeleteAccount()
+  }
+
+  const METHODS = [
+    { key: 'fido2',     label: 'Passkey (FIDO2 / Biometric)', enrolled: factors?.fido2     ?? false, canUnenroll: true  },
+    { key: 'totp',      label: 'Authenticator App (TOTP)',     enrolled: factors?.totp      ?? false, canUnenroll: true  },
+    { key: 'push',      label: 'Push Notification',            enrolled: factors?.push      ?? false, canUnenroll: true  },
+    { key: 'email_otp', label: 'Email OTP',                    enrolled: factors?.email_otp ?? true,  canUnenroll: false },
+  ]
+
+  return (
+    <div>
+      <SectionCard title="Enrolled Authentication Factors">
+        {loadingFactors ? (
+          <div style={{ color: T.inkSub, fontSize: '0.83rem', padding: '0.5rem 0' }}>Loading enrollment status…</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {METHODS.map(m => (
+              <div key={m.key} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0.7rem 0.9rem', background: T.bgMuted,
+                borderRadius: '8px', border: `1px solid ${T.border}`,
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.86rem', fontWeight: 600, color: T.ink }}>{m.label}</div>
+                  <div style={{ marginTop: '0.2rem' }}>
+                    <span style={{
+                      fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem',
+                      borderRadius: '999px',
+                      background: m.enrolled ? T.greenLight : T.bgCard,
+                      color: m.enrolled ? T.green : T.inkSub,
+                      border: `1px solid ${m.enrolled ? T.greenBorder : T.border}`,
+                    }}>
+                      {m.enrolled ? '✓ Enrolled' : 'Not enrolled'}
+                    </span>
+                  </div>
+                </div>
+                {m.canUnenroll && m.enrolled && (
+                  <button
+                    style={{ padding: '0.3rem 0.75rem', background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red, borderRadius: '999px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}
+                    onClick={() => handleUnenroll(m.key)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {factors === null && !loadingFactors && (
+          <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.9rem', background: T.amberLight, border: `1px solid ${T.amberBorder}`, borderRadius: '8px', fontSize: '0.8rem', color: T.amber }}>
+            Could not fetch live enrollment data from IBM Verify.
+          </div>
+        )}
+        <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' as const }}>
+          <button style={{ padding: '0.4rem 0.9rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '999px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: T.ink }}
+            onClick={() => navigate('/enroll')}>
+            Enroll a new factor
+          </button>
+          <button style={{ padding: '0.4rem 0.9rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '999px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: T.ink }}
+            onClick={loadFactors}>
+            Refresh
+          </button>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Danger Zone">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' as const }}>
+          <div>
+            <div style={{ fontSize: '0.88rem', fontWeight: 700, color: T.red, marginBottom: '0.2rem' }}>Delete My Account</div>
+            <div style={{ fontSize: '0.8rem', color: T.inkSub, maxWidth: '440px' }}>
+              Permanently removes your identity from IBM Verify and all local banking data. This action is irreversible and requires MFA verification.
+            </div>
+          </div>
+          <button
+            style={{ padding: '0.5rem 1.2rem', background: T.red, color: '#fff', border: 'none', borderRadius: '999px', cursor: 'pointer', fontWeight: 700, fontSize: '0.85rem', flexShrink: 0 }}
+            onClick={handleDeleteAccount}
+          >
+            Delete account
+          </button>
+        </div>
+      </SectionCard>
+    </div>
+  )
+}
+
+
 function SecuritySection({ role, showToast }: { role: string; showToast: (m: string, kind?: 'success' | 'error') => void }) {
   const [curPwd,  setCurPwd]  = useState('')
   const [newPwd,  setNewPwd]  = useState('')

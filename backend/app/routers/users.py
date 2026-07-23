@@ -70,6 +70,64 @@ async def get_me(current_user: User = Depends(get_current_user)):
     }
 
 
+class SelfUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+
+@router.put("/me")
+async def update_me(
+    req: SelfUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Self-service: update own name and/or email.
+    Syncs the change to IBM Verify then updates the local DB record.
+    """
+    new_name = req.name or current_user.name
+    new_email = req.email or current_user.email
+
+    # Only call IBM Verify if something actually changed
+    if new_name != current_user.name or new_email != current_user.email:
+        try:
+            await verify_client.update_user(
+                current_user.verify_user_id, new_email, new_name, current_user.role
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"IBM Verify update failed: {exc}") from exc
+
+    current_user.name = new_name
+    current_user.email = new_email
+    await db.commit()
+    await db.refresh(current_user)
+
+    return {
+        "id": current_user.verify_user_id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "role": current_user.role,
+    }
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Self-service: permanently delete own account from IBM Verify and local DB.
+    Requires a valid step-up token (enforced on the frontend via /stepup).
+    """
+    verify_user_id = current_user.verify_user_id
+
+    await verify_client.delete_user(verify_user_id)
+
+    await db.execute(delete(User).where(User.verify_user_id == verify_user_id))
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # ── Joiner / Mover / Leaver — admin directory ──────────────────────────────
 
 class ManagedUserOut(BaseModel):

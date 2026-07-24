@@ -9,6 +9,7 @@ type Section =
   | 'profile'
   | 'security'
   | 'identity'
+  | 'privacy'
   | 'notifications'
   | 'preferences'
   | 'organization'
@@ -113,6 +114,7 @@ const NAV_ALL: { id: Section; label: string; icon: string; roles: string[] }[] =
   { id: 'profile',       label: 'Profile',        icon: '👤', roles: ['Customer','Manager','Admin'] },
   { id: 'security',      label: 'Security',        icon: '🔒', roles: ['Customer','Manager','Admin'] },
   { id: 'identity',      label: 'Identity',        icon: '🪪', roles: ['Customer','Manager','Admin'] },
+  { id: 'privacy',       label: 'Privacy',         icon: '🛡️', roles: ['Customer','Manager','Admin'] },
   { id: 'notifications', label: 'Notifications',   icon: '🔔', roles: ['Customer','Manager','Admin'] },
   { id: 'preferences',   label: 'Preferences',     icon: '🎛', roles: ['Customer','Manager','Admin'] },
   { id: 'organization',  label: 'Organization',    icon: '🏢', roles: ['Manager','Admin'] },
@@ -161,7 +163,7 @@ export default function SettingsPage() {
       <div style={s.body}>
         <aside style={s.sidebar}>
           <div style={s.navGroup}>ACCOUNT</div>
-          {nav.filter(n => ['profile','security','notifications','preferences'].includes(n.id)).map(n => (
+          {nav.filter(n => ['profile','security','identity','privacy','notifications','preferences'].includes(n.id)).map(n => (
             <button key={n.id}
               style={{ ...s.navBtn, ...(activeSection === n.id ? s.navBtnActive : {}) }}
               onClick={() => setSection(n.id)}
@@ -189,6 +191,7 @@ export default function SettingsPage() {
           {activeSection === 'profile'       && <ProfileSection       user={user} role={role} showToast={showToast} />}
           {activeSection === 'security'      && <SecuritySection      role={role} showToast={showToast} />}
           {activeSection === 'identity'      && <IdentitySection      showToast={showToast} />}
+          {activeSection === 'privacy'       && <PrivacySection       showToast={showToast} />}
           {activeSection === 'notifications' && <NotificationsSection role={role} showToast={showToast} />}
           {activeSection === 'preferences'   && <PreferencesSection   showToast={showToast} />}
           {activeSection === 'organization'  && <OrganizationSection  role={role} showToast={showToast} />}
@@ -299,17 +302,45 @@ function ProfileSection({ user, role, showToast }: {
 // ─── Security ─────────────────────────────────────────────────────────────────
 
 // ─── Identity (self-service: enrolled factors + account deletion) ─────────────
-interface EnrolledFactors { fido2: boolean; totp: boolean; push: boolean; email_otp: boolean; sso: boolean }
+
+/** A single device registration returned by /users/me enrolled_factors. */
+interface DeviceReg { id: string; name: string; created_at: string | null }
+
+interface EnrolledFactors {
+  fido2:     false | DeviceReg[]
+  totp:      false | DeviceReg[]
+  push:      false | DeviceReg[]
+  email_otp: false | DeviceReg[]
+  sso:       true
+}
 interface MeResponse { id: string; email: string; name: string; role: string; enrolled_factors: EnrolledFactors }
 type PendingIdentityAction = { type: 'delete_account' } | { type: 'unenroll'; factor: string }
 const PENDING_IDENTITY_KEY = 'mb_pending_identity_action'
+
+/** Map factor keys to human-readable labels and enroll routes. */
+const FACTOR_META: Record<string, { label: string; icon: string; enrollPath: string; canUnenroll: boolean }> = {
+  fido2:     { label: 'Passkey (FIDO2 / Biometric)', icon: '🪪', enrollPath: '/enroll?method=fido2',     canUnenroll: true  },
+  totp:      { label: 'Authenticator App (TOTP)',     icon: '🔑', enrollPath: '/enroll?method=totp',      canUnenroll: true  },
+  push:      { label: 'Push Notification',            icon: '📲', enrollPath: '/enroll?method=push',      canUnenroll: true  },
+  email_otp: { label: 'Email OTP',                    icon: '📧', enrollPath: '',                         canUnenroll: false },
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch { return '' }
+}
 
 function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success' | 'error') => void }) {
   const { stepupVerified, logout } = useAuth()
   const navigate = useNavigate()
 
-  const [factors, setFactors]           = useState<EnrolledFactors | null>(null)
-  const [loadingFactors, setLoading]    = useState(true)
+  const [factors, setFactors]             = useState<EnrolledFactors | null>(null)
+  const [loadingFactors, setLoading]      = useState(true)
+  const [removingFactor, setRemoving]     = useState<string | null>(null)
+  const [verifyTenantUrl, setVerifyTenantUrl] = useState<string>('')
+  const [showIbvModal, setShowIbvModal]   = useState(false)
 
   const loadFactors = () => {
     setLoading(true)
@@ -319,7 +350,13 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadFactors() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadFactors()
+    // Fetch tenant URL for the IBM Verify enrollment deep-link
+    api.get<{ verify_tenant_url: string }>('/auth/sso/config')
+      .then(({ data }) => setVerifyTenantUrl(data.verify_tenant_url))
+      .catch(() => {/* non-critical */})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resume a pending action after returning from step-up
   useEffect(() => {
@@ -338,18 +375,21 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
   }
 
   async function executeUnenroll(factor: string) {
+    setRemoving(factor)
     try {
-      const { data } = await api.get<MeResponse>('/users/me')
-      await api.delete(`/users/${encodeURIComponent(data.id)}/factors/${factor}`)
-      showToast(`${factor} has been unenrolled.`)
+      await api.delete(`/users/me/factors/${factor}`)
+      showToast(`${FACTOR_META[factor]?.label ?? factor} has been unenrolled.`)
       loadFactors()
     } catch {
       showToast(`Failed to unenroll ${factor}. Please try again.`, 'error')
+    } finally {
+      setRemoving(null)
     }
   }
 
   function handleUnenroll(factor: string) {
-    if (!window.confirm(`Remove your ${factor} authenticator? This cannot be undone without re-enrolling.`)) return
+    const label = FACTOR_META[factor]?.label ?? factor
+    if (!window.confirm(`Remove your ${label} authenticator?\nThis cannot be undone without re-enrolling.`)) return
     if (!stepupVerified) { requireStepUp({ type: 'unenroll', factor }); return }
     void executeUnenroll(factor)
   }
@@ -371,67 +411,234 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
     void executeDeleteAccount()
   }
 
-  const METHODS = [
-    { key: 'fido2',     label: 'Passkey (FIDO2 / Biometric)', enrolled: factors?.fido2     ?? false, canUnenroll: true  },
-    { key: 'totp',      label: 'Authenticator App (TOTP)',     enrolled: factors?.totp      ?? false, canUnenroll: true  },
-    { key: 'push',      label: 'Push Notification',            enrolled: factors?.push      ?? false, canUnenroll: true  },
-    { key: 'email_otp', label: 'Email OTP',                    enrolled: factors?.email_otp ?? true,  canUnenroll: false },
-  ]
+  const METHODS = (Object.keys(FACTOR_META) as Array<keyof typeof FACTOR_META>).map(key => {
+    const raw = factors ? (factors as unknown as Record<string, unknown>)[key] : undefined
+    const devices: DeviceReg[] = Array.isArray(raw) ? raw : []
+    const enrolled = devices.length > 0
+    return { key, ...FACTOR_META[key], enrolled, devices }
+  })
 
   return (
     <div>
-      <SectionCard title="Enrolled Authentication Factors">
+      <SectionCard title="Authentication Methods"
+        action={
+          <button style={f.outlineBtn} onClick={loadFactors}>Refresh</button>
+        }
+      >
+        <div style={{ fontSize: '0.78rem', color: T.inkSub, marginBottom: '0.9rem' }}>
+          Manage the MFA methods and devices tied to your account. You must verify your identity (step-up) before removing a factor.
+        </div>
+
         {loadingFactors ? (
           <div style={{ color: T.inkSub, fontSize: '0.83rem', padding: '0.5rem 0' }}>Loading enrollment status…</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {METHODS.map(m => (
-              <div key={m.key} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '0.7rem 0.9rem', background: T.bgMuted,
-                borderRadius: '8px', border: `1px solid ${T.border}`,
-              }}>
-                <div>
-                  <div style={{ fontSize: '0.86rem', fontWeight: 600, color: T.ink }}>{m.label}</div>
-                  <div style={{ marginTop: '0.2rem' }}>
-                    <span style={{
-                      fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem',
-                      borderRadius: '999px',
-                      background: m.enrolled ? T.greenLight : T.bgCard,
-                      color: m.enrolled ? T.green : T.inkSub,
-                      border: `1px solid ${m.enrolled ? T.greenBorder : T.border}`,
+          <>
+            {/* Only show enrolled methods */}
+            {METHODS.filter(m => m.enrolled).length === 0 ? (
+              <div style={{ padding: '0.75rem 0.9rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}`, fontSize: '0.82rem', color: T.inkSub }}>
+                No authentication methods enrolled yet.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {METHODS.filter(m => m.enrolled).map(m => {
+                  const isRemoving = removingFactor === m.key
+                  return (
+                    <div key={m.key} style={{
+                      borderRadius: '10px',
+                      border: `1px solid ${T.greenBorder}`,
+                      overflow: 'hidden',
                     }}>
-                      {m.enrolled ? '✓ Enrolled' : 'Not enrolled'}
+                      {/* Factor header row */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '0.75rem 1rem',
+                        background: T.greenLight,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <span style={{ fontSize: '1.1rem' }}>{m.icon}</span>
+                          <div>
+                            <div style={{ fontSize: '0.87rem', fontWeight: 700, color: T.ink }}>{m.label}</div>
+                            <span style={{
+                              fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.4rem',
+                              borderRadius: '999px',
+                              background: T.greenLight,
+                              color: T.green,
+                              border: `1px solid ${T.greenBorder}`,
+                            }}>
+                              {`✓ ${m.devices.length} device${m.devices.length !== 1 ? 's' : ''}`}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Remove button — only for removable enrolled factors */}
+                        {m.canUnenroll && (
+                          <button
+                            style={{ padding: '0.35rem 0.85rem', background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red, borderRadius: '999px', cursor: isRemoving ? 'default' : 'pointer', fontSize: '0.78rem', fontWeight: 600, opacity: isRemoving ? 0.5 : 1 }}
+                            onClick={() => !isRemoving && handleUnenroll(m.key)}
+                            disabled={isRemoving}
+                          >
+                            {isRemoving ? 'Removing…' : 'Remove'}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Device list */}
+                      {m.devices.length > 0 && (
+                        <div style={{ borderTop: `1px solid ${T.border}` }}>
+                          {m.devices.map((dev, idx) => (
+                            <div key={dev.id} style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              padding: '0.55rem 1rem',
+                              background: idx % 2 === 0 ? T.bgCard : T.bgMuted,
+                              borderBottom: idx < m.devices.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+                            }}>
+                              <div>
+                                <div style={{ fontSize: '0.83rem', color: T.ink, fontWeight: 600 }}>{dev.name || 'Device'}</div>
+                                {dev.created_at && (
+                                  <div style={{ fontSize: '0.7rem', color: T.inkSub, marginTop: '0.1rem' }}>
+                                    Registered {formatDate(dev.created_at)}
+                                  </div>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '0.68rem', padding: '0.15rem 0.5rem', borderRadius: '999px', background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}`, fontWeight: 700 }}>
+                                Active
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Add additional method — triggers confirmation modal before redirecting */}
+            <div style={{ marginTop: '1.1rem', paddingTop: '0.9rem', borderTop: `1px solid ${T.borderLight}` }}>
+              <button
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                  padding: '0.5rem 1.1rem',
+                  background: T.amber, color: '#0d1117',
+                  borderRadius: '999px', border: 'none',
+                  fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer',
+                }}
+                onClick={() => verifyTenantUrl ? setShowIbvModal(true) : navigate('/enroll')}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                </svg>
+                Add authentication method
+              </button>
+              <div style={{ fontSize: '0.72rem', color: T.inkSub, marginTop: '0.45rem' }}>
+                Opens IBM Verify to add a passkey, authenticator app, or push notification.
+              </div>
+            </div>
+
+            {/* IBM Verify redirect confirmation modal */}
+            {showIbvModal && (
+              <div
+                style={{
+                  position: 'fixed' as const, inset: 0,
+                  background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  zIndex: 10000,
+                }}
+                onClick={() => setShowIbvModal(false)}
+              >
+                <div
+                  style={{
+                    background: T.bgCard, border: `1px solid ${T.border}`,
+                    borderRadius: '14px', padding: '2rem 2rem 1.5rem',
+                    width: '100%', maxWidth: '420px',
+                    boxShadow: T.shadowPop,
+                  }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  {/* Icon */}
+                  <div style={{
+                    width: '48px', height: '48px', borderRadius: '12px',
+                    background: T.amberLight, border: `1px solid ${T.amberBorder}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '1.5rem', marginBottom: '1.1rem',
+                  }}>
+                    🔐
+                  </div>
+
+                  {/* Heading */}
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: T.ink, marginBottom: '0.5rem', letterSpacing: '-0.01em' }}>
+                    You're leaving MockBank
+                  </div>
+
+                  {/* Body */}
+                  <div style={{ fontSize: '0.85rem', color: T.inkSub, lineHeight: 1.65, marginBottom: '1.4rem' }}>
+                    You'll be taken to <strong style={{ color: T.ink }}>IBM Verify</strong> to add your
+                    authentication method. Enroll your passkey, authenticator app, or push notification there.
+                    <br /><br />
+                    Once you're done, <strong style={{ color: T.ink }}>come back here and click Refresh</strong> to
+                    see your updated methods.
+                  </div>
+
+                  {/* Tenant badge */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    padding: '0.55rem 0.85rem',
+                    background: T.bgMuted, border: `1px solid ${T.border}`,
+                    borderRadius: '8px', marginBottom: '1.5rem',
+                  }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.inkSub} strokeWidth="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    <span style={{ fontSize: '0.75rem', color: T.inkSub, fontFamily: 'monospace' }}>
+                      {verifyTenantUrl.replace('https://', '')}
                     </span>
                   </div>
+
+                  {/* Buttons */}
+                  <div style={{ display: 'flex', gap: '0.65rem' }}>
+                    <a
+                      href={`${verifyTenantUrl}/usc/settings/security`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                        padding: '0.6rem 0',
+                        background: T.amber, color: '#0d1117',
+                        borderRadius: '999px', textDecoration: 'none',
+                        fontSize: '0.85rem', fontWeight: 700,
+                      }}
+                      onClick={() => setShowIbvModal(false)}
+                    >
+                      Go to IBM Verify
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                    </a>
+                    <button
+                      style={{
+                        padding: '0.6rem 1.1rem',
+                        background: 'transparent', color: T.inkSub,
+                        border: `1px solid ${T.border}`,
+                        borderRadius: '999px', cursor: 'pointer',
+                        fontSize: '0.85rem', fontWeight: 600,
+                      }}
+                      onClick={() => setShowIbvModal(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-                {m.canUnenroll && m.enrolled && (
-                  <button
-                    style={{ padding: '0.3rem 0.75rem', background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red, borderRadius: '999px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600 }}
-                    onClick={() => handleUnenroll(m.key)}
-                  >
-                    Remove
-                  </button>
-                )}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
+
         {factors === null && !loadingFactors && (
           <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.9rem', background: T.amberLight, border: `1px solid ${T.amberBorder}`, borderRadius: '8px', fontSize: '0.8rem', color: T.amber }}>
-            Could not fetch live enrollment data from IBM Verify.
+            Could not fetch live enrollment data from IBM Verify. Check your connection and try refreshing.
           </div>
         )}
-        <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' as const }}>
-          <button style={{ padding: '0.4rem 0.9rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '999px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: T.ink }}
-            onClick={() => navigate('/enroll')}>
-            Enroll a new factor
-          </button>
-          <button style={{ padding: '0.4rem 0.9rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '999px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, color: T.ink }}
-            onClick={loadFactors}>
-            Refresh
-          </button>
-        </div>
       </SectionCard>
 
       <SectionCard title="Danger Zone">
@@ -455,6 +662,385 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
 }
 
 
+// ─── Privacy & Consents ────────────────────────────────────────────────────────
+
+interface ConsentRecord {
+  id: number
+  purpose: string
+  label: string
+  description: string
+  category: string
+  is_required: boolean
+  is_active: boolean
+  granted_at: string | null
+  revoked_at: string | null
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  essential:  'Essential',
+  functional: 'Functional',
+  marketing:  'Marketing & Communications',
+}
+
+function PrivacySection({ showToast }: { showToast: (m: string, kind?: 'success' | 'error') => void }) {
+  const [consents, setConsents]     = useState<ConsentRecord[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [toggling, setToggling]     = useState<number | null>(null)
+  const [fetchError, setFetchError] = useState(false)
+  const [verifyTenantUrl, setVerifyTenantUrl] = useState<string>('')
+  const [showOidcModal, setShowOidcModal]     = useState(false)
+
+  const loadConsents = () => {
+    setLoading(true)
+    setFetchError(false)
+    api.get<ConsentRecord[]>('/users/me/consents')
+      .then(({ data }) => setConsents(data))
+      .catch(() => setFetchError(true))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadConsents()
+    api.get<{ verify_tenant_url: string }>('/auth/sso/config')
+      .then(({ data }) => setVerifyTenantUrl(data.verify_tenant_url))
+      .catch(() => {/* non-critical */})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleToggle(consent: ConsentRecord) {
+    if (consent.is_required) return
+    setToggling(consent.id)
+    try {
+      const endpoint = consent.is_active
+        ? `/users/me/consents/${consent.id}/revoke`
+        : `/users/me/consents/${consent.id}/restore`
+      const { data } = await api.put<ConsentRecord>(endpoint)
+      setConsents(prev => prev.map(c => c.id === data.id ? data : c))
+      showToast(data.is_active ? `"${consent.label}" consent restored.` : `"${consent.label}" consent revoked.`)
+    } catch {
+      showToast(`Failed to update consent. Please try again.`, 'error')
+    } finally {
+      setToggling(null)
+    }
+  }
+
+  // Group consents by category for display
+  const categories = Array.from(new Set(consents.map(c => c.category)))
+
+  return (
+    <div>
+      <SectionCard title="Your Consents & Data Preferences"
+        action={<button style={f.outlineBtn} onClick={loadConsents}>Refresh</button>}
+      >
+        <div style={{ fontSize: '0.78rem', color: T.inkSub, marginBottom: '1rem', lineHeight: 1.6 }}>
+          These are the permissions you granted when creating your account. Essential consents are required
+          for the service to function and cannot be revoked. Optional consents can be changed at any time.
+        </div>
+
+        {loading && (
+          <div style={{ color: T.inkSub, fontSize: '0.83rem', padding: '0.5rem 0' }}>Loading consent records…</div>
+        )}
+
+        {fetchError && !loading && (
+          <div style={{ padding: '0.65rem 0.9rem', background: T.redLight, border: `1px solid ${T.redBorder}`, borderRadius: '8px', fontSize: '0.8rem', color: T.red }}>
+            Could not load consents. Please try refreshing.
+          </div>
+        )}
+
+        {!loading && !fetchError && categories.map(cat => (
+          <div key={cat} style={{ marginBottom: '1.25rem' }}>
+            {/* Category heading */}
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: T.inkLight, letterSpacing: '0.1em', textTransform: 'uppercase' as const, marginBottom: '0.5rem' }}>
+              {CATEGORY_LABELS[cat] ?? cat}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {consents.filter(c => c.category === cat).map(c => {
+                const isToggling = toggling === c.id
+                return (
+                  <div key={c.id} style={{
+                    padding: '0.85rem 1rem',
+                    borderRadius: '10px',
+                    border: `1px solid ${c.is_required ? T.border : (c.is_active ? T.greenBorder : T.redBorder)}`,
+                    background: c.is_required ? T.bgMuted : (c.is_active ? T.greenLight : T.redLight + '66'),
+                    opacity: isToggling ? 0.7 : 1,
+                    transition: 'opacity 0.15s',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' as const }}>
+                          <span style={{ fontSize: '0.87rem', fontWeight: 700, color: T.ink }}>{c.label}</span>
+                          {c.is_required && (
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: '999px', background: T.amberLight, color: T.amber, border: `1px solid ${T.amberBorder}` }}>
+                              Required
+                            </span>
+                          )}
+                          <span style={{
+                            fontSize: '0.65rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: '999px',
+                            background: c.is_active ? T.greenLight : T.redLight,
+                            color: c.is_active ? T.green : T.red,
+                            border: `1px solid ${c.is_active ? T.greenBorder : T.redBorder}`,
+                          }}>
+                            {c.is_active ? 'Active' : 'Revoked'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: T.inkSub, lineHeight: 1.55 }}>{c.description}</div>
+                        {c.granted_at && (
+                          <div style={{ fontSize: '0.68rem', color: T.inkLight, marginTop: '0.4rem' }}>
+                            {c.is_active
+                              ? `Granted ${formatDate(c.granted_at)}`
+                              : `Revoked ${c.revoked_at ? formatDate(c.revoked_at) : ''} · Originally granted ${formatDate(c.granted_at)}`}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Toggle button — only for non-required consents */}
+                      {!c.is_required && (
+                        <button
+                          style={{
+                            padding: '0.35rem 0.85rem',
+                            background: c.is_active ? T.redLight : T.greenLight,
+                            color: c.is_active ? T.red : T.green,
+                            border: `1px solid ${c.is_active ? T.redBorder : T.greenBorder}`,
+                            borderRadius: '999px',
+                            cursor: isToggling ? 'default' : 'pointer',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            flexShrink: 0,
+                          }}
+                          onClick={() => !isToggling && handleToggle(c)}
+                          disabled={isToggling}
+                        >
+                          {isToggling ? '…' : (c.is_active ? 'Revoke' : 'Restore')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Info footer */}
+        {!loading && !fetchError && consents.length > 0 && (
+          <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: T.blueLight, borderRadius: '8px', border: `1px solid ${T.blue}44`, fontSize: '0.77rem', color: T.blue, lineHeight: 1.55 }}>
+            Revoking an optional consent will stop that data processing going forward. It will not delete historical data already processed.
+            To permanently delete your data, use the Delete Account option in the Identity section.
+          </div>
+        )}
+      </SectionCard>
+
+      {/* ── OIDC Consents layer ─────────────────────────────────────────────── */}
+      <SectionCard title="Identity Provider Consents">
+        <div style={{ fontSize: '0.78rem', color: T.inkSub, lineHeight: 1.65, marginBottom: '1rem' }}>
+          The table above shows <strong style={{ color: T.ink }}>MockBank's own data purposes</strong> —
+          what we do with your information inside this app. There is a second, deeper layer below that.
+        </div>
+
+        {/* Two-layer explainer */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.1rem' }}>
+          {[
+            {
+              icon: '🏦',
+              layer: 'Layer 1 — MockBank (this page)',
+              title: 'How MockBank uses your data',
+              desc: 'Things like analytics, product recommendations, and marketing emails. You can toggle these above.',
+              color: T.green, colorLight: T.greenLight, colorBorder: T.greenBorder,
+            },
+            {
+              icon: '🔑',
+              layer: 'Layer 2 — IBM Verify (identity provider)',
+              title: 'What MockBank is allowed to read about you',
+              desc: 'When you first signed in, your browser asked "Allow MockBank to access your email, name, and profile?" — those are OIDC scope consents stored at IBM Verify.',
+              color: T.blue, colorLight: T.blueLight, colorBorder: `${T.blue}44`,
+            },
+          ].map(item => (
+            <div key={item.layer} style={{
+              display: 'flex', gap: '0.75rem', alignItems: 'flex-start',
+              padding: '0.85rem 1rem', borderRadius: '10px',
+              background: item.colorLight, border: `1px solid ${item.colorBorder}`,
+            }}>
+              <span style={{ fontSize: '1.2rem', marginTop: '0.05rem', flexShrink: 0 }}>{item.icon}</span>
+              <div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, color: item.color, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '0.2rem' }}>{item.layer}</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: T.ink, marginBottom: '0.25rem' }}>{item.title}</div>
+                <div style={{ fontSize: '0.77rem', color: T.inkSub, lineHeight: 1.55 }}>{item.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* CTA to IBM Verify privacy page */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: '0.75rem' }}>
+          <div style={{ fontSize: '0.78rem', color: T.inkSub, lineHeight: 1.55, flex: 1 }}>
+            To see or withdraw the sign-in permissions you granted to MockBank POC at the
+            identity provider level, view them on IBM Verify.
+          </div>
+          <button
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
+              padding: '0.5rem 1rem',
+              background: T.blueLight, color: T.blue,
+              border: `1px solid ${T.blue}44`,
+              borderRadius: '999px', cursor: 'pointer',
+              fontSize: '0.82rem', fontWeight: 700, flexShrink: 0,
+            }}
+            onClick={() => setShowOidcModal(true)}
+          >
+            View on IBM Verify
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+              <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </button>
+        </div>
+      </SectionCard>
+
+      {/* ── OIDC consents explainer modal ───────────────────────────────────── */}
+      {showOidcModal && (
+        <div
+          style={{
+            position: 'fixed' as const, inset: 0,
+            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 10000, padding: '1rem',
+          }}
+          onClick={() => setShowOidcModal(false)}
+        >
+          <div
+            style={{
+              background: T.bgCard, border: `1px solid ${T.border}`,
+              borderRadius: '14px', padding: '2rem 2rem 1.5rem',
+              width: '100%', maxWidth: '480px',
+              boxShadow: T.shadowPop, maxHeight: '90vh', overflowY: 'auto' as const,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Icon */}
+            <div style={{
+              width: '48px', height: '48px', borderRadius: '12px',
+              background: T.blueLight, border: `1px solid ${T.blue}44`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '1.5rem', marginBottom: '1.1rem',
+            }}>
+              🔑
+            </div>
+
+            {/* Heading */}
+            <div style={{ fontSize: '1rem', fontWeight: 800, color: T.ink, marginBottom: '0.4rem', letterSpacing: '-0.01em' }}>
+              What are "identity provider consents"?
+            </div>
+            <div style={{ fontSize: '0.82rem', color: T.inkSub, marginBottom: '1.25rem', lineHeight: 1.6 }}>
+              Think of it like a keycard system. IBM Verify is the security desk — MockBank had to ask permission to know who you are.
+            </div>
+
+            {/* Step-by-step explanation */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.4rem' }}>
+              {[
+                {
+                  step: '1',
+                  title: 'You clicked "Sign in with IBM Verify"',
+                  body: 'MockBank sent you to IBM Verify and said: "I need to know this person\'s email address, name, and that they\'re who they say they are."',
+                },
+                {
+                  step: '2',
+                  title: 'IBM Verify asked for your permission',
+                  body: 'A consent screen appeared (or was silently approved) asking: "Allow MockBank POC to access: openid, email, profile." You clicked Allow.',
+                },
+                {
+                  step: '3',
+                  title: 'IBM Verify issued a token to MockBank',
+                  body: 'IBM Verify gave MockBank a secure, short-lived pass containing only what you approved — your email and basic profile. MockBank cannot see your password or anything else.',
+                },
+                {
+                  step: '4',
+                  title: 'Those approvals are recorded at IBM Verify',
+                  body: 'IBM Verify keeps a record of exactly what you approved and when. You can see these records — and withdraw them — on the IBM Verify Privacy page.',
+                },
+              ].map(item => (
+                <div key={item.step} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                  <div style={{
+                    width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
+                    background: T.amberLight, border: `1px solid ${T.amberBorder}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.72rem', fontWeight: 800, color: T.amber,
+                  }}>
+                    {item.step}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: T.ink, marginBottom: '0.2rem' }}>{item.title}</div>
+                    <div style={{ fontSize: '0.77rem', color: T.inkSub, lineHeight: 1.55 }}>{item.body}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* What you'll see callout */}
+            <div style={{ padding: '0.75rem 1rem', background: T.bgMuted, border: `1px solid ${T.border}`, borderRadius: '8px', marginBottom: '1.4rem' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: T.ink, marginBottom: '0.3rem' }}>What you'll see on IBM Verify</div>
+              <div style={{ fontSize: '0.75rem', color: T.inkSub, lineHeight: 1.6 }}>
+                A table showing <strong style={{ color: T.ink }}>MockBank POC</strong> with three rows — <code style={{ fontSize: '0.73rem', color: T.blue }}>openid</code>, <code style={{ fontSize: '0.73rem', color: T.blue }}>email</code>, <code style={{ fontSize: '0.73rem', color: T.blue }}>profile</code> — each showing "Allow" and the date you consented.
+                You can withdraw any of these, which will sign you out of MockBank.
+              </div>
+            </div>
+
+            {/* Tenant badge */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.55rem 0.85rem',
+              background: T.bgMuted, border: `1px solid ${T.border}`,
+              borderRadius: '8px', marginBottom: '1.4rem',
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.inkSub} strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <span style={{ fontSize: '0.75rem', color: T.inkSub, fontFamily: 'monospace' }}>
+                {verifyTenantUrl ? verifyTenantUrl.replace('https://', '') : 'kavyad.verify.ibm.com'}
+              </span>
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '0.65rem' }}>
+              <a
+                href={verifyTenantUrl ? `${verifyTenantUrl}/usc/settings/privacy` : '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                  padding: '0.6rem 0',
+                  background: T.blue, color: '#fff',
+                  borderRadius: '999px', textDecoration: 'none',
+                  fontSize: '0.85rem', fontWeight: 700,
+                }}
+                onClick={() => setShowOidcModal(false)}
+              >
+                View my consents on IBM Verify
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </a>
+              <button
+                style={{
+                  padding: '0.6rem 1.1rem',
+                  background: 'transparent', color: T.inkSub,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: '999px', cursor: 'pointer',
+                  fontSize: '0.85rem', fontWeight: 600,
+                }}
+                onClick={() => setShowOidcModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 function SecuritySection({ role, showToast }: { role: string; showToast: (m: string, kind?: 'success' | 'error') => void }) {
   const [curPwd,  setCurPwd]  = useState('')
   const [newPwd,  setNewPwd]  = useState('')
@@ -462,10 +1048,10 @@ function SecuritySection({ role, showToast }: { role: string; showToast: (m: str
   const [mfa,     setMfa]     = useState(true)
   const [loginAlerts, setLoginAlerts] = useState(true)
   const [showSessions, setShowSessions] = useState(false)
-  // Admin-only org-wide policy toggles
-  const [enforceMfa,    setEnforceMfa]    = useState(true)
-  const [stepUpEnabled, setStepUpEnabled] = useState(true)
-  const [riskEngine,    setRiskEngine]    = useState(true)
+  // Admin-only org-wide policy toggles (reserved for future use)
+  const [_enforceMfa,    _setEnforceMfa]    = useState(true)
+  const [_stepUpEnabled, _setStepUpEnabled] = useState(true)
+  const [_riskEngine,    _setRiskEngine]    = useState(true)
 
   const sessions = [
     { device: 'Chrome on macOS',  ip: '192.168.1.42', location: 'Chennai, IN',   last: 'Active now',  current: true  },

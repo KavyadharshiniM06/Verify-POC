@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -83,3 +83,23 @@ class AuditLog(Base):
     actor_name: Mapped[str] = mapped_column(String(255))
     details: Mapped[str] = mapped_column(String(1000), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserConsent(Base):
+    """Consent records granted by users at account creation.
+
+    Each row represents a single consent purpose (e.g. "banking_data").
+    Required consents (is_required=True) cannot be revoked — revoking them
+    would require account deletion. Optional consents can be toggled freely.
+    revoked_at=None means the consent is currently active.
+    """
+    __tablename__ = "user_consents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_verify_id: Mapped[str] = mapped_column(String(255), index=True)
+    purpose: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(100), default="general")
+    is_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)

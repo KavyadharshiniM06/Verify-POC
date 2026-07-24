@@ -25,7 +25,7 @@ from app.auth.jwt_handler import (
 from app.config import settings
 from app.database import get_db
 from app.models import User
-from app.seed import seed_user_data
+from app.seed import seed_user_consents, seed_user_data
 from app.services.verify_client import verify_client
 
 logger = logging.getLogger(__name__)
@@ -194,11 +194,50 @@ async def sso_callback(
             code_verifier=str(pending["code_verifier"]),
         )
     except Exception as exc:
+        exc_str = str(exc).lower()
+        # IBM Verify returns HTTP 400 with error=access_denied or
+        # error=interaction_required when the user has revoked consent
+        # and the token endpoint cannot issue a token for the requested scopes.
+        # Surface this as a clear 403 so the frontend can show a human message.
+        consent_signals = (
+            "access_denied" in exc_str
+            or "interaction_required" in exc_str
+            or ("scope" in exc_str and "denied" in exc_str)
+            or "consent" in exc_str
+        )
+        if consent_signals:
+            logger.warning(
+                "OIDC token exchange blocked — likely consent revoked. exc=%s", exc
+            )
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "CONSENT_REQUIRED",
+                    "message": (
+                        "You have withdrawn consent for MockBank to access your profile. "
+                        "Please sign in again and click Allow to continue."
+                    ),
+                },
+            )
         logger.error("OIDC token exchange failed — IBM Verify response: %s", str(exc), exc_info=True)
         raise HTTPException(status_code=502, detail=f"SSO token exchange failed: {exc}")
 
     id_token = token_response.get("id_token")
     if not id_token:
+        # No id_token can also happen when IBM Verify silently drops scopes
+        # due to revoked consent — check the token response error field first.
+        tv_error = token_response.get("error", "")
+        if tv_error in ("access_denied", "interaction_required", "consent_required"):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "CONSENT_REQUIRED",
+                    "message": (
+                        "You have withdrawn consent for MockBank to access your profile. "
+                        "Please sign in again and click Allow to continue."
+                    ),
+                },
+            )
         raise HTTPException(status_code=502, detail=f"No ID token in response. Keys: {list(token_response.keys())}")
 
     access_token = token_response.get("access_token", "")
@@ -223,7 +262,18 @@ async def sso_callback(
     verify_user_id = claims["sub"]
     email = claims.get("email")
     if not email:
-        raise HTTPException(status_code=400, detail="Email claim missing from ID token")
+        # email missing from claims means the email scope was not granted —
+        # the user either revoked the scope or denied it on re-prompt.
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "CONSENT_REQUIRED",
+                "message": (
+                    "You have withdrawn consent for MockBank to access your profile. "
+                    "Please sign in again and click Allow to continue."
+                ),
+            },
+        )
     name = claims.get("name") or claims.get("preferred_username") or email
     role = _map_role(claims)
     logger.warning(
@@ -262,6 +312,7 @@ async def sso_callback(
         db.add(user)
         await db.flush()
         await seed_user_data(db, user.id, verify_user_id)
+        await seed_user_consents(db, verify_user_id)
     else:
         user.verify_user_id = verify_user_id  # update if it changed
         user.email = email
@@ -478,6 +529,15 @@ async def stepup_complete(
         "ibm_id_token": id_token,
         "user": {"name": user.name, "email": user.email, "role": user.role},
     }
+
+
+@router.get("/config")
+async def get_public_config():
+    """
+    Return non-secret tenant config values the frontend needs.
+    Only the tenant base URL is exposed — no credentials or keys.
+    """
+    return {"verify_tenant_url": settings.verify_tenant_url}
 
 
 @router.get("/logout")

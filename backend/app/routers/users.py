@@ -48,11 +48,17 @@ async def _log(
 async def get_me(current_user: User = Depends(get_current_user)):
     """
     Return current user profile plus live enrollment status from IBM Verify.
+
+    enrolled_factors shape:
+      Each factor key (fido2, totp, push) is either:
+        - False  — not enrolled
+        - list[{id, name, created_at}]  — one entry per registered device
+      email_otp and sso are always True (cannot be removed).
     """
     try:
         factors = await verify_client.get_enrolled_factors(current_user.verify_user_id)
     except Exception:
-        factors = {"fido2": False, "totp": False, "push": False}
+        factors = {"fido2": False, "totp": False, "push": False, "email_otp": False}
 
     return {
         "id": current_user.verify_user_id,
@@ -64,7 +70,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
             "fido2": factors["fido2"],
             "totp": factors["totp"],
             "push": factors["push"],
-            "email_otp": True,
+            "email_otp": factors["email_otp"],
             "sso": True,
         },
     }
@@ -125,6 +131,31 @@ async def delete_me(
 
     await db.execute(delete(User).where(User.verify_user_id == verify_user_id))
     await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+_UNENROLLABLE_FACTORS = {"fido2", "totp", "push"}
+
+
+@router.delete("/me/factors/{factor_type}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_my_factor(
+    factor_type: str,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Self-service: unenroll an MFA factor from IBM Verify.
+
+    Allowed factor_type values: fido2, totp, push.
+    Email OTP is always available and cannot be removed.
+    A user can only remove their own factors (no IDOR risk).
+    Step-up enforcement is handled on the frontend before calling this endpoint.
+    """
+    if factor_type not in _UNENROLLABLE_FACTORS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"factor_type must be one of {sorted(_UNENROLLABLE_FACTORS)}",
+        )
+    await verify_client.unenroll_factor(current_user.verify_user_id, factor_type)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Account, AccountType, Transaction, TransactionType
+from app.models import Account, AccountType, Transaction, TransactionType, UserConsent
 
 CATEGORIES = [
     "Food & Dining",
@@ -109,3 +109,91 @@ async def seed_user_data(db: AsyncSession, user_id: int, verify_user_id: str) ->
 
     db.add_all(transactions)
     await db.commit()
+
+
+# ── Standard consent purposes seeded for every new user ──────────────────────
+# Each entry: (purpose_key, display_label, description, category, is_required)
+_CONSENT_DEFINITIONS = [
+    (
+        "banking_data_processing",
+        "Banking Data Processing",
+        "Processing of your financial data (account balances, transaction history, and payment details) "
+        "to provide core banking services, fraud detection, and regulatory compliance. "
+        "This consent is required for your account to function.",
+        "essential",
+        True,
+    ),
+    (
+        "identity_verification",
+        "Identity Verification",
+        "Use of your name, email address, and authentication credentials to verify your identity "
+        "when you sign in, perform transactions, and access account settings. "
+        "This consent is required for secure access.",
+        "essential",
+        True,
+    ),
+    (
+        "security_communications",
+        "Security & Account Alerts",
+        "Sending you security notifications such as sign-in alerts, unusual activity warnings, "
+        "MFA verification codes, and account change confirmations via email.",
+        "essential",
+        True,
+    ),
+    (
+        "account_analytics",
+        "Account Analytics",
+        "Aggregated analysis of your spending patterns, account activity trends, and financial "
+        "behaviour to provide personalised insights, budgeting summaries, and dashboard charts.",
+        "functional",
+        False,
+    ),
+    (
+        "product_recommendations",
+        "Product Recommendations",
+        "Using your account activity and profile to suggest relevant financial products, "
+        "features, and offers that may benefit you based on your usage patterns.",
+        "functional",
+        False,
+    ),
+    (
+        "marketing_communications",
+        "Marketing & Promotional Emails",
+        "Receiving newsletters, promotional offers, product announcements, and marketing "
+        "communications from MockBank Financial Services.",
+        "marketing",
+        False,
+    ),
+    (
+        "third_party_data_sharing",
+        "Third-Party Data Sharing",
+        "Sharing anonymised and aggregated account data with trusted third-party partners "
+        "for financial research, benchmarking, and service improvement purposes.",
+        "marketing",
+        False,
+    ),
+]
+
+
+async def seed_user_consents(db: AsyncSession, verify_user_id: str) -> None:
+    """Create the standard set of consent records for a newly registered user.
+
+    Called once when a user is first created in the local database (on their
+    first successful SSO callback). Idempotent: safe to call again — duplicate
+    checks are handled by the caller verifying the user is new.
+    """
+    now = datetime.utcnow()
+    consents = [
+        UserConsent(
+            user_verify_id=verify_user_id,
+            purpose=purpose,
+            description=description,
+            category=category,
+            is_required=is_required,
+            granted_at=now,
+            revoked_at=None,
+        )
+        for purpose, _label, description, category, is_required in _CONSENT_DEFINITIONS
+    ]
+    db.add_all(consents)
+    # Caller commits

@@ -39,6 +39,112 @@ function ArrowDownIcon({ size = 12 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
 }
 
+// ── Consent mini-widget ───────────────────────────────────────────────────────
+interface ConsentItem {
+  id: number; label: string; is_required: boolean; is_active: boolean
+  category: string; granted_at: string | null; revoked_at: string | null
+}
+
+function ConsentCard() {
+  const navigate = useNavigate()
+  const [consents, setConsents]   = useState<ConsentItem[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [toggling, setToggling]   = useState<number | null>(null)
+  const [error, setError]         = useState(false)
+
+  useEffect(() => {
+    api.get<ConsentItem[]>('/users/me/consents')
+      .then(r => setConsents(r.data))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleToggle(c: ConsentItem) {
+    if (c.is_required) return
+    setToggling(c.id)
+    try {
+      const ep = c.is_active
+        ? `/users/me/consents/${c.id}/revoke`
+        : `/users/me/consents/${c.id}/restore`
+      const { data } = await api.put<ConsentItem>(ep)
+      setConsents(prev => prev.map(x => x.id === data.id ? data : x))
+    } catch { /* silent — full management is on Settings > Privacy */ }
+    finally { setToggling(null) }
+  }
+
+  const optional  = consents.filter(c => !c.is_required)
+  const activeOpt = optional.filter(c => c.is_active).length
+
+  return (
+    <div style={s.consentCard}>
+      <div style={s.consentHeader}>
+        <div>
+          <div style={s.sectionTitle}>Privacy &amp; Consents</div>
+          <div style={{ fontSize: '0.75rem', color: T.inkSub, marginTop: '0.2rem' }}>
+            {loading ? 'Loading…' : error ? 'Could not load' : `${activeOpt} of ${optional.length} optional consents active`}
+          </div>
+        </div>
+        <button style={s.viewAllLink} onClick={() => navigate('/settings')}>
+          Manage →
+        </button>
+      </div>
+
+      {loading && <div style={{ fontSize: '0.78rem', color: T.inkSub, padding: '0.5rem 0' }}>Loading…</div>}
+      {error && !loading && <div style={{ fontSize: '0.78rem', color: T.red, padding: '0.5rem 0' }}>Unable to load consent data.</div>}
+
+      {!loading && !error && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+          {consents.slice(0, 5).map((c, idx) => (
+            <div key={c.id} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '0.5rem 0',
+              borderBottom: idx < Math.min(consents.length, 5) - 1 ? `1px solid ${T.borderLight}` : 'none',
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</div>
+                {c.is_required && (
+                  <span style={{ fontSize: '0.62rem', color: T.amber, fontWeight: 700 }}>Required</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0, marginLeft: '0.5rem' }}>
+                <span style={{
+                  fontSize: '0.65rem', fontWeight: 700, padding: '0.1rem 0.4rem', borderRadius: '999px',
+                  background: c.is_active ? T.greenLight : T.redLight,
+                  color: c.is_active ? T.green : T.red,
+                  border: `1px solid ${c.is_active ? T.greenBorder : T.redBorder}`,
+                }}>
+                  {c.is_active ? 'Active' : 'Revoked'}
+                </span>
+                {!c.is_required && (
+                  <button
+                    style={{
+                      padding: '0.2rem 0.55rem',
+                      background: c.is_active ? T.redLight : T.greenLight,
+                      color: c.is_active ? T.red : T.green,
+                      border: `1px solid ${c.is_active ? T.redBorder : T.greenBorder}`,
+                      borderRadius: '999px', cursor: toggling === c.id ? 'default' : 'pointer',
+                      fontSize: '0.7rem', fontWeight: 700,
+                    }}
+                    onClick={() => toggling === null && handleToggle(c)}
+                    disabled={toggling === c.id}
+                  >
+                    {toggling === c.id ? '…' : (c.is_active ? 'Revoke' : 'Restore')}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {consents.length > 5 && (
+            <button style={s.viewAllLink} onClick={() => navigate('/settings')}>
+              View all {consents.length} consents →
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Customer Dashboard ─────────────────────────────────────────────────────────
 function CustomerDashboard() {
   const navigate = useNavigate()
@@ -197,6 +303,9 @@ function CustomerDashboard() {
           )
         })}
       </div>
+
+      {/* ── Privacy & Consents ── */}
+      <ConsentCard />
 
       {/* ── Bottom row ── */}
       <div style={s.bottomGrid}>
@@ -476,4 +585,11 @@ const s: Record<string, React.CSSProperties> = {
   kpiLabel: { fontSize: '0.65rem', color: T.inkSub, fontWeight: 700, letterSpacing: '0.1em', marginBottom: '0.4rem' },
   kpiValue: { fontSize: '1.8rem', fontWeight: 800, color: T.ink, letterSpacing: '-0.03em' },
   kpiSub: { fontSize: '0.72rem', color: T.green, marginTop: '0.25rem' },
+
+  consentCard: {
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: '12px', padding: '1.25rem 1.5rem',
+    boxShadow: T.shadowCard, marginBottom: '1.5rem',
+  },
+  consentHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' },
 }

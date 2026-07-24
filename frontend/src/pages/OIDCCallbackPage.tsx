@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
+// Shape returned by the backend for structured errors
+interface ApiError { response?: { status?: number; data?: { code?: string; message?: string; detail?: { code?: string; message?: string } } } }
+
 export default function OIDCCallbackPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
@@ -42,14 +45,25 @@ export default function OIDCCallbackPage() {
       try {
         const { data } = await api.post('/auth/sso/callback', { code, state })
         // Store the IBM Verify id_token for use as id_token_hint during step-up.
-        // This lets the step-up flow skip the first-factor screen and go straight
-        // to the second-factor (MFA) challenge.
         if (data.ibm_id_token) {
           sessionStorage.setItem('mb_ibm_id_token', data.ibm_id_token)
         }
         login(data.token, data.user, false, null)
         navigate('/dashboard', { replace: true })
-      } catch {
+      } catch (err: unknown) {
+        const apiErr = err as ApiError
+        const status = apiErr?.response?.status
+        // detail can be a plain string (502) or an object with code+message (403)
+        const detail = apiErr?.response?.data?.detail
+        const code   = typeof detail === 'object' ? detail?.code  : apiErr?.response?.data?.code
+        const msg    = typeof detail === 'object' ? detail?.message : undefined
+
+        if (status === 403 && code === 'CONSENT_REQUIRED') {
+          // Navigate to login carrying the specific consent message in location state
+          // so LoginPage can render it without losing page context.
+          navigate('/', { replace: true, state: { consentError: msg ?? 'You have withdrawn consent for MockBank to access your profile. Please sign in again and click Allow to continue.' } })
+          return
+        }
         setError('IBM Verify login failed. Please try again.')
       }
     }

@@ -577,42 +577,141 @@ class VerifyClient:
     async def get_enrolled_factors(self, verify_user_id: str) -> dict:
         """
         Return the authentication factors enrolled by a user from IBM Verify.
-        Queries FIDO2, TOTP, and push registrations for the given user.
-        Returns a dict with keys: fido2, totp, push — each True/False.
+        Queries FIDO2, TOTP, push, and email OTP registrations for the given user.
+
+        Returns a dict with keys fido2, totp, push, email_otp — each value is either
+        False (not enrolled) or a list of device registration dicts:
+            [{"id": str, "name": str, "created_at": str|None}]
+
         Uses client_credentials token — ROPC is blocked by adaptive access.
         """
         headers = await self._headers()
-        results = {"fido2": False, "totp": False, "push": False}
+        results: dict = {"fido2": False, "totp": False, "push": False, "email_otp": False}
+
+        def _parse_created(reg: dict) -> str | None:
+            """Extract a registration timestamp from various IBM Verify field names."""
+            for key in ("created", "createdAt", "lastUsed", "dateCreated", "modified", "modifiedAt"):
+                val = reg.get(key)
+                if val:
+                    return str(val)
+            return None
 
         try:
-            fido2_url = (
-                f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties"
-                f"/{settings.fido2_rp_id}/registrations"
-            )
-            r = await self._client.get(fido2_url, params={"userId": verify_user_id}, headers=headers)
+            # IBM Verify's per-RP endpoint (/v2.0/factors/fido2/relyingparties/{rpId}/registrations)
+            # returns 404 for any RP ID that was not created through this specific app's
+            # enrollment flow — including passkeys enrolled via IBM Verify's own portal.
+            #
+            # The tenant-wide endpoint (/v2.0/factors/fido2/registrations) returns ALL
+            # registrations regardless of RP, but ignores the userId query param server-side.
+            # We fetch everything and filter client-side by userId.
+            fido2_all_url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/registrations"
+            r = await self._client.get(fido2_all_url, headers=headers)
             if r.status_code == 200:
-                fido2_data = r.json()
-                results["fido2"] = len(fido2_data.get("fido2", fido2_data.get("registrations", []))) > 0
-        except Exception:
-            logger.debug("FIDO2 registration query failed for user %s", verify_user_id)
+                all_regs = r.json().get("fido2", r.json().get("registrations", []))
+                # Filter by userId — the server ignores the query param
+                regs = [reg for reg in all_regs if reg.get("userId") == verify_user_id]
+                if regs:
+                    results["fido2"] = [
+                        {
+                            "id": reg.get("id", ""),
+                            "name": (
+                                reg.get("attributes", {}).get("nickname")
+                                or reg.get("friendlyName")
+                                or reg.get("nickName")
+                                or reg.get("attributes", {}).get("aaGuid", "")
+                                or "Passkey device"
+                            ),
+                            "created_at": _parse_created(reg),
+                        }
+                        for reg in regs
+                    ]
+            else:
+                logger.warning(
+                    "FIDO2 registrations query returned %s for user %s: %s",
+                    r.status_code, verify_user_id, r.text[:200],
+                )
+        except Exception as exc:
+            logger.warning("FIDO2 registration query failed for user %s: %s", verify_user_id, exc)
 
         try:
             totp_url = f"{settings.verify_tenant_url}/v2.0/factors/totp/registrations"
             r = await self._client.get(totp_url, params={"userId": verify_user_id}, headers=headers)
             if r.status_code == 200:
                 totp_data = r.json()
-                results["totp"] = len(totp_data.get("totpRegistrations", totp_data.get("registrations", []))) > 0
-        except Exception:
-            logger.debug("TOTP registration query failed for user %s", verify_user_id)
+                regs = totp_data.get("totpRegistrations", totp_data.get("registrations", []))
+                if regs:
+                    results["totp"] = [
+                        {
+                            "id": reg.get("id", ""),
+                            "name": (
+                                reg.get("friendlyName")
+                                or reg.get("accountName")
+                                or "Authenticator App"
+                            ),
+                            "created_at": _parse_created(reg),
+                        }
+                        for reg in regs
+                    ]
+            elif r.status_code != 404:
+                logger.warning("TOTP registration query returned %s for user %s", r.status_code, verify_user_id)
+        except Exception as exc:
+            logger.warning("TOTP registration query failed for user %s: %s", verify_user_id, exc)
 
         try:
             push_url = f"{settings.verify_tenant_url}/v2.0/factors/push/registrations"
             r = await self._client.get(push_url, params={"userId": verify_user_id}, headers=headers)
             if r.status_code == 200:
                 push_data = r.json()
-                results["push"] = len(push_data.get("pushRegistrations", push_data.get("registrations", []))) > 0
-        except Exception:
-            logger.debug("Push registration query failed for user %s", verify_user_id)
+                regs = push_data.get("pushRegistrations", push_data.get("registrations", []))
+                if regs:
+                    results["push"] = [
+                        {
+                            "id": reg.get("id", ""),
+                            "name": (
+                                reg.get("friendlyName")
+                                or reg.get("deviceType")
+                                or reg.get("applicationName")
+                                or "Mobile device"
+                            ),
+                            "created_at": _parse_created(reg),
+                        }
+                        for reg in regs
+                    ]
+            elif r.status_code != 404:
+                logger.warning("Push registration query returned %s for user %s", r.status_code, verify_user_id)
+        except Exception as exc:
+            logger.warning("Push registration query failed for user %s: %s", verify_user_id, exc)
+
+        try:
+            email_otp_url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
+            # IBM Verify requires the search value to be quoted: userId = "xxx"
+            r = await self._client.get(
+                email_otp_url,
+                params={"search": f'userId = "{verify_user_id}"'},
+                headers=headers,
+            )
+            if r.status_code == 200:
+                regs = r.json().get("emailotp", [])
+                enabled_regs = [e for e in regs if e.get("enabled") or e.get("validated")]
+                effective = enabled_regs if enabled_regs else regs
+                if effective:
+                    results["email_otp"] = [
+                        {
+                            "id": reg.get("id", ""),
+                            "name": (
+                                reg.get("attributes", {}).get("emailAddress")
+                                or reg.get("emailAddress")
+                                or reg.get("email")
+                                or "Email OTP"
+                            ),
+                            "created_at": _parse_created(reg),
+                        }
+                        for reg in effective
+                    ]
+            elif r.status_code != 404:
+                logger.warning("Email OTP query returned %s for user %s: %s", r.status_code, verify_user_id, r.text[:200])
+        except Exception as exc:
+            logger.warning("Email OTP registration query failed for user %s: %s", verify_user_id, exc)
 
         return results
 

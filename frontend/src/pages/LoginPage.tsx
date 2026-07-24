@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import api from '../api/axios'
 import { T } from '../styles/theme'
 
@@ -23,6 +24,10 @@ const TESTIMONIALS = [
 ]
 
 export default function LoginPage() {
+  const location = useLocation()
+  // Consent-revoked message injected by OIDCCallbackPage via navigate state
+  const consentError = (location.state as { consentError?: string } | null)?.consentError ?? null
+
   const [error,       setError]   = useState<string | null>(null)
   const [loading,     setLoading] = useState(false)
   const [testimonial] = useState(() => TESTIMONIALS[Math.floor(Math.random() * TESTIMONIALS.length)])
@@ -109,6 +114,20 @@ export default function LoginPage() {
             <h2 style={s.signInTitle}>Sign in to your account</h2>
             <p style={s.signInSub}>Sign in securely using your registered credentials.</p>
           </div>
+
+          {consentError && (
+            <div style={s.consentErrorBox}>
+              <div style={s.consentErrorIcon}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div>
+                <div style={s.consentErrorTitle}>Access revoked</div>
+                <div style={s.consentErrorMsg}>{consentError}</div>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div style={s.errorBox}>⚠ {error}</div>
@@ -223,6 +242,21 @@ const s: Record<string, React.CSSProperties> = {
   errorBox: {
     background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red,
     borderRadius: '8px', padding: '0.7rem 1rem', fontSize: '0.85rem', marginBottom: '1rem',
+  },
+
+  consentErrorBox: {
+    display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+    background: T.amberLight, border: `1px solid ${T.amberBorder}`,
+    borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '1.2rem',
+  },
+  consentErrorIcon: {
+    color: T.amber, flexShrink: 0, marginTop: '1px',
+  },
+  consentErrorTitle: {
+    fontSize: '0.84rem', fontWeight: 700, color: T.ink, marginBottom: '0.2rem',
+  },
+  consentErrorMsg: {
+    fontSize: '0.8rem', color: T.inkSub, lineHeight: 1.55,
   },
 
   signInBtn: {

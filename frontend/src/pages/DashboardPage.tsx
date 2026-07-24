@@ -43,10 +43,12 @@ function ArrowDownIcon({ size = 12 }: { size?: number }) {
 interface ConsentItem {
   id: number; label: string; is_required: boolean; is_active: boolean
   category: string; granted_at: string | null; revoked_at: string | null
+  session_terminated?: boolean
 }
 
 function ConsentCard() {
   const navigate = useNavigate()
+  const { forceLogoutWithError } = useAuth()
   const [consents, setConsents]   = useState<ConsentItem[]>([])
   const [loading, setLoading]     = useState(true)
   const [toggling, setToggling]   = useState<number | null>(null)
@@ -67,6 +69,15 @@ function ConsentCard() {
         ? `/users/me/consents/${c.id}/revoke`
         : `/users/me/consents/${c.id}/restore`
       const { data } = await api.put<ConsentItem>(ep)
+
+      if (data.session_terminated) {
+        // Consent revoked — terminate session immediately, redirect to login
+        forceLogoutWithError(
+          `You revoked the "${c.label}" consent. Your session has been ended. Please sign in again to continue.`
+        )
+        return
+      }
+
       setConsents(prev => prev.map(x => x.id === data.id ? data : x))
     } catch { /* silent — full management is on Settings > Privacy */ }
     finally { setToggling(null) }

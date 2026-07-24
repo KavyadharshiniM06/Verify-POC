@@ -674,6 +674,7 @@ interface ConsentRecord {
   is_active: boolean
   granted_at: string | null
   revoked_at: string | null
+  session_terminated?: boolean
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -683,6 +684,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 function PrivacySection({ showToast }: { showToast: (m: string, kind?: 'success' | 'error') => void }) {
+  const { forceLogoutWithError } = useAuth()
   const [consents, setConsents]     = useState<ConsentRecord[]>([])
   const [loading, setLoading]       = useState(true)
   const [toggling, setToggling]     = useState<number | null>(null)
@@ -714,8 +716,21 @@ function PrivacySection({ showToast }: { showToast: (m: string, kind?: 'success'
         ? `/users/me/consents/${consent.id}/revoke`
         : `/users/me/consents/${consent.id}/restore`
       const { data } = await api.put<ConsentRecord>(endpoint)
+
+      if (data.session_terminated) {
+        // Consent was revoked — terminate the session immediately so the
+        // user must re-login to acknowledge the updated consent state.
+        // forceLogoutWithError clears all session storage and navigates to
+        // the login page with a clear explanation banner.
+        forceLogoutWithError(
+          `You revoked the "${consent.label}" consent. Your session has been ended. Please sign in again to continue.`
+        )
+        return
+      }
+
+      // Consent was restored — just update local state
       setConsents(prev => prev.map(c => c.id === data.id ? data : c))
-      showToast(data.is_active ? `"${consent.label}" consent restored.` : `"${consent.label}" consent revoked.`)
+      showToast(`"${consent.label}" consent restored.`)
     } catch {
       showToast(`Failed to update consent. Please try again.`, 'error')
     } finally {

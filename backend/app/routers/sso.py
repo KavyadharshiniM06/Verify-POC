@@ -308,6 +308,7 @@ async def sso_callback(
             name=name,
             role=effective_role,
             is_active=True,
+            ibm_access_token=access_token or None,
         )
         db.add(user)
         await db.flush()
@@ -319,6 +320,8 @@ async def sso_callback(
         user.name = name
         user.role = effective_role
         user.is_active = True
+        # Always refresh the stored access_token — it changes on every login
+        user.ibm_access_token = access_token or None
 
     await db.commit()
     await db.refresh(user)
@@ -337,6 +340,9 @@ async def sso_callback(
         # IBM Verify exactly who the user is and skips the password/passkey screen,
         # going straight to the second-factor challenge.
         "ibm_id_token": id_token,
+        # Return the access_token so the frontend can pass it back to
+        # /auth/sso/session-check for live consent revocation detection.
+        "ibm_access_token": access_token,
         "user": {
             "name": user.name,
             "email": user.email,
@@ -529,6 +535,72 @@ async def stepup_complete(
         "ibm_id_token": id_token,
         "user": {"name": user.name, "email": user.email, "role": user.role},
     }
+
+
+@router.post("/session-check")
+async def session_check(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Heartbeat endpoint: called every 15 s by the frontend SessionGuard to
+    detect OIDC consent revocation on IBM Verify's self-service Privacy page.
+
+    Reads the user's IBM Verify access_token from the database (stored at
+    every login) — no request body needed, no sessionStorage dependency.
+
+    Calls IBM Verify /userinfo with that token.
+    • 200 + email + sub present → session healthy, return {"active": true}
+    • 401 / 403 from IBM Verify  → OIDC consent revoked
+    • 200 but email / sub missing → scope stripped after revocation
+    Both cases raise 401 CONSENT_REVOKED so the frontend terminates immediately.
+
+    Fail-open on 5xx / network errors so infra blips don't log users out.
+    """
+    from sqlalchemy import select as sa_select
+    result = await db.execute(
+        sa_select(User).where(User.verify_user_id == current_user.verify_user_id)
+    )
+    db_user = result.scalar_one_or_none()
+    stored_token = db_user.ibm_access_token if db_user else None
+
+    if not stored_token:
+        # No access_token recorded (e.g. legacy session before this feature).
+        # Cannot check consent — treat as healthy to avoid spurious logouts.
+        logger.debug(
+            "session-check: no ibm_access_token for user %s — skipping check.",
+            current_user.verify_user_id,
+        )
+        return {"active": True}
+
+    try:
+        active = await verify_client.check_userinfo_active(stored_token)
+    except Exception as exc:
+        logger.warning("session-check: /userinfo call failed — treating as active. exc=%s", exc)
+        return {"active": True}
+
+    if not active:
+        logger.warning(
+            "session-check: OIDC consent revoked for user %s — terminating session.",
+            current_user.verify_user_id,
+        )
+        # Clear the stored token so subsequent checks don't loop
+        if db_user:
+            db_user.ibm_access_token = None
+            await db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "CONSENT_REVOKED",
+                "message": (
+                    "You have revoked MockBank\u2019s access to your profile on IBM Verify. "
+                    "Your session has been ended. Please sign in again and click "
+                    "\u2018Allow\u2019 on the consent screen to restore access."
+                ),
+            },
+        )
+
+    return {"active": True}
 
 
 @router.get("/config")

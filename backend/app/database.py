@@ -26,3 +26,7 @@ async def init_db():
             await conn.exec_driver_sql(
                 "ALTER TABLE users ADD COLUMN offboarded_at DATETIME"
             )
+        if "ibm_access_token" not in column_names:
+            await conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN ibm_access_token TEXT"
+            )

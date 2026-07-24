@@ -930,6 +930,93 @@ class VerifyClient:
 
     # ── OIDC / SSO ────────────────────────────────────────────────────────
 
+    async def check_userinfo_active(self, access_token: str) -> bool:
+        """
+        Verify the OIDC access_token still has the scopes MockBank requires
+        by calling IBM Verify's /userinfo endpoint and inspecting the response.
+
+        Why /userinfo + content check (not token introspection):
+          - Introspection returns active=true even after consent is revoked on
+            IBM Verify's self-service privacy page (token stays technically valid).
+          - /userinfo enforces scope auth on every call. Revoking email or
+            profile consent causes IBM Verify to either return 401 OR return 200
+            with those claims stripped from the response body.
+          - We check BOTH: status code AND whether the required claims are present.
+
+        MockBank requires both `email` and `sub` to function:
+          - `email`  is the user's identity key in the local DB.
+          - `sub`    is the IBM Verify user ID bound to the JWT.
+          - Revoking either `email` or `profile` scope drops those claims.
+
+        From the IBM Verify privacy page the user sees two revocable rows:
+          • MockBank POC / OpenID Connect scopes / email
+          • MockBank POC / OpenID Connect scopes / profile
+        Revoking either must terminate the MockBank session immediately.
+
+        Returns:
+          True  — /userinfo 200 AND both sub+email present → session valid.
+          False — 401/403, OR 200 but email/sub missing → consent revoked.
+
+        Fail-open on 5xx / network errors to avoid spurious logouts.
+        """
+        userinfo_url = f"{settings.verify_tenant_url}/v1.0/endpoint/default/userinfo"
+        try:
+            resp = await self._client.get(
+                userinfo_url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                },
+            )
+        except Exception as exc:
+            logger.warning("check_userinfo_active: network error — treating as active. exc=%s", exc)
+            return True  # fail open on connectivity issues
+
+        # 401 / 403 → IBM Verify explicitly rejected the token / scopes
+        if resp.status_code in (401, 403):
+            logger.warning(
+                "check_userinfo_active: /userinfo returned %s — OIDC consent revoked.",
+                resp.status_code,
+            )
+            return False
+
+        # 5xx or unexpected status → infra problem, fail open
+        if not resp.is_success:
+            logger.warning(
+                "check_userinfo_active: /userinfo returned %s — treating as active. body=%s",
+                resp.status_code, resp.text[:200],
+            )
+            return True
+
+        # 200 — check the response body for required claims.
+        # IBM Verify may return 200 with claims stripped when a specific
+        # scope consent is revoked (e.g. email revoked → no email claim).
+        try:
+            claims = resp.json()
+        except Exception:
+            logger.warning("check_userinfo_active: could not parse /userinfo JSON — treating as active")
+            return True
+
+        sub   = claims.get("sub")
+        email = claims.get("email")
+
+        logger.debug(
+            "check_userinfo_active: /userinfo 200 — sub=%s email_present=%s",
+            sub, bool(email),
+        )
+
+        # sub missing → openid scope revoked (unlikely but fatal)
+        if not sub:
+            logger.warning("check_userinfo_active: sub missing from /userinfo — openid scope revoked")
+            return False
+
+        # email missing → email scope revoked → MockBank cannot identify the user
+        if not email:
+            logger.warning("check_userinfo_active: email missing from /userinfo — email scope revoked")
+            return False
+
+        return True
+
     async def oidc_token_exchange(self, code: str, redirect_uri: str, code_verifier: str = "") -> dict:
         credentials = f"{settings.verify_client_id}:{settings.verify_client_secret}"
         encoded = base64.b64encode(credentials.encode()).decode()

@@ -19,10 +19,11 @@ Flow:
 
   3. POST /auth/stepup/complete
        - Verifies the factor response with IBM Verify
-       - Issues a new session JWT with stepup_verified=True
-       - Returns: { token, user, stepup_verified }
-"""
+        - Issues a new session JWT with stepup_verified=True
+        - Returns: { token, user, stepup_verified }
+ """
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -83,7 +84,7 @@ async def stepup_methods(
 
 class StepUpBeginRequest(BaseModel):
     return_to: str = "/transfers"
-    preferred_method: str | None = None  # optional override; defaults to auto-select
+    preferred_method: Optional[str] = None  # optional override; defaults to auto-select
 
 
 @router.post("/begin")
@@ -114,7 +115,7 @@ async def stepup_begin(
     if not candidates:
         raise HTTPException(status_code=400, detail="No second factor enrolled")
 
-    last_exc: Exception | None = None
+    last_exc: Optional[Exception] = None
 
     for method in candidates:
         try:
@@ -200,9 +201,9 @@ async def stepup_poll(
 
 class StepUpCompleteRequest(BaseModel):
     method: str
-    transaction_id: str | None = None
-    otp_code: str | None = None          # for totp and email_otp
-    assertion_response: dict | None = None  # for fido2
+    transaction_id: Optional[str] = None
+    otp_code: Optional[str] = None          # for totp and email_otp
+    assertion_response: Optional[dict] = None  # for fido2
 
 
 @router.post("/complete")

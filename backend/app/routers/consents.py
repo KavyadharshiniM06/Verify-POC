@@ -26,7 +26,7 @@ _PURPOSE_LABELS: dict[str, str] = {
 }
 
 
-def _row_to_dict(c: UserConsent) -> dict:
+def _row_to_dict(c: UserConsent, *, session_terminated: bool = False) -> dict:
     return {
         "id": c.id,
         "purpose": c.purpose,
@@ -37,6 +37,10 @@ def _row_to_dict(c: UserConsent) -> dict:
         "is_active": c.revoked_at is None,
         "granted_at": c.granted_at.isoformat() if c.granted_at else None,
         "revoked_at": c.revoked_at.isoformat() if c.revoked_at else None,
+        # True when the revoke action requires the client to terminate its
+        # session immediately so the user must re-login to acknowledge the
+        # updated consent state. Always False for restore operations.
+        "session_terminated": session_terminated,
     }
 
 
@@ -77,7 +81,13 @@ async def revoke_consent(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Revoke an optional consent. Required consents cannot be revoked."""
+    """Revoke an optional consent. Required consents cannot be revoked.
+
+    session_terminated is NOT set for optional consents (functional / marketing).
+    Revoking marketing emails or analytics should be silent — no logout needed.
+    session_terminated is only True for essential/required consents, but those
+    are blocked above, so in practice it will always be False here.
+    """
     result = await db.execute(
         select(UserConsent).where(
             UserConsent.id == consent_id,
@@ -93,11 +103,14 @@ async def revoke_consent(
             detail="This consent is required for the service to function and cannot be revoked.",
         )
     if consent.revoked_at is not None:
-        return _row_to_dict(consent)  # already revoked — idempotent
+        return _row_to_dict(consent, session_terminated=False)  # already revoked — idempotent
     consent.revoked_at = datetime.utcnow()
     await db.commit()
     await db.refresh(consent)
-    return _row_to_dict(consent)
+    # Optional consent revoked — no session termination needed.
+    # The user can continue using the app; the revoked preference takes effect
+    # going forward (e.g. they stop receiving marketing emails).
+    return _row_to_dict(consent, session_terminated=False)
 
 
 @router.put("/{consent_id}/restore")

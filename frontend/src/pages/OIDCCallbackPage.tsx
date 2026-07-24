@@ -48,6 +48,11 @@ export default function OIDCCallbackPage() {
         if (data.ibm_id_token) {
           sessionStorage.setItem('mb_ibm_id_token', data.ibm_id_token)
         }
+        // Store the IBM Verify access_token so the session-check heartbeat can
+        // introspect it to detect consent revocation while the user is logged in.
+        if (data.ibm_access_token) {
+          sessionStorage.setItem('mb_ibm_access_token', data.ibm_access_token)
+        }
         login(data.token, data.user, false, null)
         navigate('/dashboard', { replace: true })
       } catch (err: unknown) {

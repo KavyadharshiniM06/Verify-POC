@@ -3,6 +3,16 @@ import { useLocation } from 'react-router-dom'
 import api from '../api/axios'
 import { T } from '../styles/theme'
 
+// Read a consent_error carried either in React router state (from OIDCCallbackPage)
+// or as a URL query param (from AuthContext.forceLogoutWithError via window.location.replace).
+function useConsentError(): string | null {
+  const location = useLocation()
+  const fromState = (location.state as { consentError?: string } | null)?.consentError ?? null
+  if (fromState) return fromState
+  const params = new URLSearchParams(location.search)
+  return params.get('consent_error')
+}
+
 function ShieldIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -24,9 +34,7 @@ const TESTIMONIALS = [
 ]
 
 export default function LoginPage() {
-  const location = useLocation()
-  // Consent-revoked message injected by OIDCCallbackPage via navigate state
-  const consentError = (location.state as { consentError?: string } | null)?.consentError ?? null
+  const consentError = useConsentError()
 
   const [error,       setError]   = useState<string | null>(null)
   const [loading,     setLoading] = useState(false)

@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { useSessionHeartbeat } from './hooks/useSessionHeartbeat'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
 import AdminUsersPage from './pages/AdminUsersPage'
@@ -24,6 +25,15 @@ import StepUpCallbackPage from './pages/StepUpCallbackPage'
 import EnrollMethodPage from './pages/EnrollMethodPage'
 import CardsPage from './pages/CardsPage'
 
+/**
+ * Mounts the session-validity heartbeat. Must be a child of both AuthProvider
+ * and BrowserRouter so it has access to auth state and can navigate.
+ */
+function SessionGuard() {
+  useSessionHeartbeat()
+  return null
+}
+
 /** Redirect Manager/Admin away from customer-only pages to their landing page. */
 function CustomerOnly({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -45,6 +55,8 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        {/* SessionGuard must be inside BrowserRouter + AuthProvider */}
+        <SessionGuard />
         <Routes>
           {/* ── Public / Auth routes ─────────────────────────────── */}
           <Route path="/" element={<LoginPage />} />

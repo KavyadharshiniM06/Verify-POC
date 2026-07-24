@@ -36,6 +36,10 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     offboarded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
+    # IBM Verify access_token from the most recent OIDC login.
+    # Stored server-side so the session-check heartbeat can call /userinfo
+    # without depending on sessionStorage in the browser.
+    ibm_access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     accounts: Mapped[list["Account"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )

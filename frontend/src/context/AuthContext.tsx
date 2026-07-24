@@ -1,12 +1,23 @@
+// @refresh reset
+/**
+ * AuthContext — auth state, provider, and hook.
+ *
+ * The `// @refresh reset` directive above tells Vite Fast Refresh to do a
+ * full component remount (instead of a hot patch) when this file changes.
+ * This is the documented way to handle files that intentionally export both
+ * a React component (AuthProvider) and a hook (useAuth) from the same module.
+ * See: https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+ */
+
 import React, { createContext, useContext, useState } from 'react'
 
-interface AuthUser {
+export interface AuthUser {
   name: string
   email: string
   role: string
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: AuthUser | null
   token: string | null
   /** True when the current JWT contains a non-expired step-up verification. */
@@ -15,6 +26,12 @@ interface AuthContextType {
   stepupTime: string | null
   login: (token: string, user: AuthUser, stepupVerified?: boolean, stepupTime?: string | null) => void
   logout: () => void
+  /**
+   * Immediately terminate the session and carry a consent-revoked message to
+   * the login page. Used by the session heartbeat when IBM Verify reports that
+   * the access token is no longer active.
+   */
+  forceLogoutWithError: (message: string) => void
   isAuthenticated: boolean
 }
 
@@ -55,7 +72,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   })
 
   // Derive stepupVerified directly from the JWT — never trust sessionStorage alone.
-  // This ensures expiry is respected on page reload without a round-trip to the backend.
   const [stepupVerified, setStepupVerified] = useState<boolean>(() => {
     const t = sessionStorage.getItem('mb_token')
     return t ? isStepupValidInToken(t) : false
@@ -75,7 +91,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ) => {
     sessionStorage.setItem('mb_token', newToken)
     sessionStorage.setItem('mb_user', JSON.stringify(newUser))
-    // Derive from JWT — don't blindly trust the passed-in flag
     const derivedStepup = isStepupValidInToken(newToken)
     const derivedTime = (decodeJwtPayload(newToken).stepup_time as string | null) ?? newStepupTime
     setToken(newToken)
@@ -88,10 +103,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.removeItem('mb_token')
     sessionStorage.removeItem('mb_user')
     sessionStorage.removeItem('mb_ibm_id_token')
+    sessionStorage.removeItem('mb_ibm_access_token')
     setToken(null)
     setUser(null)
     setStepupVerified(false)
     setStepupTime(null)
+  }
+
+  const forceLogoutWithError = (message: string) => {
+    logout()
+    // window.location.replace clears the history stack so the user cannot
+    // press Back into the (now-invalid) session.
+    const encoded = encodeURIComponent(message)
+    window.location.replace(`/?consent_error=${encoded}`)
   }
 
   return (
@@ -103,6 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         stepupTime,
         login,
         logout,
+        forceLogoutWithError,
         isAuthenticated: !!token,
       }}
     >
@@ -111,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function useAuth() {
+export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx

@@ -37,7 +37,7 @@ ROLE_PRIORITY = {"Admin": 3, "Manager": 2, "Customer": 1}
 _ROLE_NORMALISED = {k.lower(): k for k in ROLE_PRIORITY}
 
 # File-backed state store so PKCE state survives uvicorn --reload restarts
-_STATE_FILE = Path(__file__).resolve().parents[3] / ".oidc_states.json"
+_STATE_FILE = Path.cwd() / ".oidc_states.json"
 
 
 def _load_states() -> Dict[str, Dict[str, Union[float, str]]]:

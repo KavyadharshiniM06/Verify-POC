@@ -295,14 +295,14 @@ function AdminSecurityView() {
   ]
 
   const orgStats = [
-    { label: 'Total Identities',    value: 42,  color: T.ink },
-    { label: 'Active',              value: 40,  color: T.green },
-    { label: 'Suspended',           value: 2,   color: T.red },
-    { label: 'MFA Enrolled',        value: 38,  color: T.blue },
-    { label: 'MFA Not Enrolled',    value: 4,   color: T.amber },
-    { label: 'High-Risk Users',     value: 3,   color: T.red },
-    { label: 'Failed Logins (24h)', value: 7,   color: '#7c5cd8' },
-    { label: 'New Joiners (7d)',    value: 6,   color: '#0ea5e9' },
+    { label: 'Total Identities',    value: 42, color: T.inkSub },
+    { label: 'Active',              value: 40, color: T.green  },
+    { label: 'Suspended',           value: 2,  color: T.red    },
+    { label: 'MFA Enrolled',        value: 38, color: T.blue   },
+    { label: 'MFA Not Enrolled',    value: 4,  color: T.amber  },
+    { label: 'High-Risk Users',     value: 3,  color: T.red    },
+    { label: 'Failed Logins (24h)', value: 7,  color: T.amber  },
+    { label: 'New Joiners (7d)',    value: 6,  color: T.green  },
   ]
 
   const auditLog = [
@@ -379,12 +379,18 @@ function AdminSecurityView() {
       </div>
 
       <div style={s.orgStatsRow}>
-        {orgStats.map(stat => (
-          <div key={stat.label} style={s.orgStatCard}>
-            <div style={{ ...s.orgStatVal, color: stat.color }}>{stat.value}</div>
-            <div style={s.orgStatLbl}>{stat.label}</div>
-          </div>
-        ))}
+        <div style={s.orgStatsLegend}>
+          {orgStats.map((stat, i) => (
+            <React.Fragment key={stat.label}>
+              {i > 0 && <span style={s.orgLegendDivider} />}
+              <div style={s.orgLegendItem}>
+                <span style={{ ...s.orgLegendDot, background: stat.color }} />
+                <span style={s.orgLegendLabel}>{stat.label}</span>
+                <span style={{ ...s.orgLegendValue, color: stat.color }}>{stat.value}</span>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
       </div>
 
       <div style={s.topRow}>
@@ -556,11 +562,19 @@ const s: Record<string, React.CSSProperties> = {
   statLbl:     { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.4rem', fontWeight: 500 },
   actionBtn:   { padding: '0.3rem 0.75rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.77rem', fontWeight: 600, color: T.ink },
 
-  // Admin — org stats strip
-  orgStatsRow: { display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: '0.65rem', marginBottom: '1.25rem' },
-  orgStatCard: { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '0.75rem 1rem', boxShadow: T.shadowCard },
-  orgStatVal:  { fontSize: '1.55rem', fontWeight: 700, lineHeight: 1 },
-  orgStatLbl:  { fontSize: '0.65rem', color: T.inkLight, marginTop: '0.3rem', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.07em' },
+  // Admin — org stats legend strip
+  orgStatsRow:      { marginBottom: '1.25rem' },
+  orgStatsLegend:   {
+    display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const,
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusInner, padding: '0.7rem 1.25rem',
+    boxShadow: T.shadowCard, gap: 0,
+  },
+  orgLegendItem:    { display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.3rem 0.85rem' },
+  orgLegendDot:     { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
+  orgLegendLabel:   { fontSize: '0.72rem', fontWeight: 600, color: T.inkSub, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
+  orgLegendValue:   { fontSize: '1rem', fontWeight: 700, lineHeight: 1 },
+  orgLegendDivider: { width: '1px', height: '28px', background: T.border, flexShrink: 0 },
 
   // Admin — policy toggles
   policyRow:  { display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.85rem 0', borderBottom: `1px solid ${T.borderLight}` },

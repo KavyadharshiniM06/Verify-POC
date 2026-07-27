@@ -61,7 +61,7 @@ class Settings(BaseSettings):
 
     # How long (minutes) the main session JWT remains valid.
     # Set SESSION_EXPIRE_MINUTES in .env to override (default: 60).
-    session_expire_minutes: int = 60
+    session_expire_minutes: int = 3
 
     # How long (minutes) a step-up token remains valid after issue.
     # After this window the user must re-verify even if their session is active.

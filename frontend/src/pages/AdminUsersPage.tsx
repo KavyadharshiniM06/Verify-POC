@@ -42,16 +42,13 @@ const ACTION_COLOR: Record<string, string> = {
   leaver_delete:    '#ef4444',
 }
 
-// ─── Deterministic avatar colour from name ───────────────────────────────────
-const AVATAR_COLORS = [
-  '#6366f1','#ec4899','#f59e0b','#10b981',
-  '#3b82f6','#8b5cf6','#ef4444','#14b8a6',
-  '#f97316','#84cc16',
-]
-function avatarColor(name: string) {
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
-  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+// ─── Consistent avatar colour ────────────────────────────────────────────────
+// Avatar colour matches the legend: role when active, red when suspended
+function avatarColor(role: string, isActive: boolean) {
+  if (!isActive) return '#ef4444'          // Suspended → red  (legend: Suspended)
+  if (role === 'Admin')    return '#a78bfa' // Admin     → purple (legend: Admins)
+  if (role === 'Manager')  return '#3b82f6' // Manager   → blue   (legend: Managers)
+  return '#0ea5e9'                          // Customer  → sky    (legend: Customers)
 }
 function initials(name: string) {
   const parts = name.trim().split(' ')
@@ -194,10 +191,10 @@ function ActionMenu({
         <div style={m.menu}>
           {item('Edit user',       T.ink,   onEdit)}
           {item('View history',    T.ink,   onHistory)}
-          {item('Reset password',  '#a78bfa', onResetPwd)}
+          {item('Reset password',  T.ink, onResetPwd)}
           <div style={m.menuDivider} />
           {user.is_active
-            ? item('Suspend access', T.amber, onDisable)
+            ? item('Suspend access', T.ink, onDisable)
             : item('Reinstate',      T.green, onReinstate)
           }
           {item('Delete user', T.red, onDelete)}
@@ -266,16 +263,38 @@ export default function AdminUsersPage() {
     try { return now - new Date(u.created_at).getTime() < 7 * 86_400_000 } catch { return false }
   }).length
 
+  // Each stat can declare a filter it drives. Clicking it toggles that filter on/off.
   const STATS = [
-    { label: 'Total Users',   value: total,     color: T.ink },
-    { label: 'Active',        value: active,    color: T.green },
-    { label: 'Pending',       value: 0,         color: T.amber },
-    { label: 'Suspended',     value: suspended, color: T.red },
-    { label: 'Admins',        value: admins,    color: '#a78bfa' },
-    { label: 'Managers',      value: managers,  color: T.blue },
-    { label: 'Customers',     value: customers, color: T.blue },
-    { label: 'Joined (7d)',   value: joined7d,  color: '#0ea5e9' },
+    { label: 'Total Users', value: total,     color: T.ink,     filter: { kind: 'reset'  as const, value: 'All'       } },
+    { label: 'Active',      value: active,    color: T.green,   filter: { kind: 'status' as const, value: 'Active'    } },
+    { label: 'Pending',     value: 0,         color: T.amber,   filter: null },
+    { label: 'Suspended',   value: suspended, color: T.red,     filter: { kind: 'status' as const, value: 'Suspended' } },
+    { label: 'Admins',      value: admins,    color: '#a78bfa', filter: { kind: 'role'   as const, value: 'Admin'     } },
+    { label: 'Managers',    value: managers,  color: T.blue,    filter: { kind: 'role'   as const, value: 'Manager'   } },
+    { label: 'Customers',   value: customers, color: '#0ea5e9', filter: { kind: 'role'   as const, value: 'Customer'  } },
+    { label: 'Joined (7d)', value: joined7d,  color: '#0ea5e9', filter: null },
   ]
+
+  const handleLegendClick = (stat: typeof STATS[number]) => {
+    if (!stat.filter) return
+    if (stat.filter.kind === 'reset') {
+      setStatusFilter('All'); setRoleFilter('All')
+    } else if (stat.filter.kind === 'status') {
+      setStatusFilter(prev => prev === stat.filter!.value ? 'All' : stat.filter!.value)
+      setRoleFilter('All')
+    } else {
+      setRoleFilter(prev => prev === stat.filter!.value ? 'All' : stat.filter!.value)
+      setStatusFilter('All')
+    }
+  }
+
+  const isLegendActive = (stat: typeof STATS[number]) => {
+    if (!stat.filter) return false
+    if (stat.filter.kind === 'reset') return statusFilter === 'All' && roleFilter === 'All'
+    return stat.filter.kind === 'status'
+      ? statusFilter === stat.filter.value
+      : roleFilter   === stat.filter.value
+  }
 
   // ── Filtered list ────────────────────────────────────────────────────────
   const filtered = users.filter(u => {
@@ -350,14 +369,49 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* ── Stats legend strip ── */}
       <div style={s.statsRow}>
-        {STATS.map(stat => (
-          <div key={stat.label} style={s.statCard}>
-            <div style={{ ...s.statLabel, color: stat.color }}>{stat.label}</div>
-            <div style={s.statValue}>{stat.value}</div>
-          </div>
-        ))}
+        <div style={s.statsLegend}>
+          {STATS.map((stat, i) => {
+            const active = isLegendActive(stat)
+            const clickable = !!stat.filter
+            return (
+              <React.Fragment key={stat.label}>
+                {i > 0 && <span style={s.legendDivider} />}
+                <div
+                  style={{
+                    ...s.legendItem,
+                    cursor: clickable ? 'pointer' : 'default',
+                    borderRadius: '6px',
+                    background: active ? stat.color + '18' : 'transparent',
+                    border: active ? `1px solid ${stat.color}55` : '1px solid transparent',
+                    transition: 'background 0.15s, border 0.15s',
+                  }}
+                  onClick={() => handleLegendClick(stat)}
+                  title={clickable ? `Filter by ${stat.label}` : undefined}
+                >
+                  <span style={{ ...s.legendDot, background: stat.color }} />
+                  <span style={{ ...s.legendLabel, color: active ? stat.color : undefined }}>{stat.label}</span>
+                  <span style={{ ...s.legendValue, color: stat.color }}>{stat.value}</span>
+                </div>
+              </React.Fragment>
+            )
+          })}
+          {/* Clear active filter hint */}
+          {(statusFilter !== 'All' || roleFilter !== 'All') && (
+            <>
+              <span style={s.legendDivider} />
+              <div
+                style={{ ...s.legendItem, cursor: 'pointer', borderRadius: '6px' }}
+                onClick={() => { setStatusFilter('All'); setRoleFilter('All') }}
+                title="Clear filter"
+              >
+                <XIcon />
+                <span style={{ ...s.legendLabel, color: T.inkSub }}>Clear</span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -419,10 +473,8 @@ export default function AdminUsersPage() {
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} style={s.cb} />
                 </th>
                 <th style={s.th}>User</th>
-                <th style={s.th}>Department</th>
                 <th style={s.th}>Role</th>
                 <th style={s.th}>Status</th>
-                <th style={s.th}>Manager</th>
                 <th style={s.th}>Risk</th>
                 <th style={{ ...s.th, textAlign: 'center' }}>MFA</th>
                 <th style={s.th}>Last Login</th>
@@ -432,17 +484,16 @@ export default function AdminUsersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ ...s.td, textAlign: 'center', color: T.inkSub, padding: '3rem' }}>
+                  <td colSpan={8} style={{ ...s.td, textAlign: 'center', color: T.inkSub, padding: '3rem' }}>
                     No users match your search.
                   </td>
                 </tr>
               )}
               {filtered.map((u, idx) => {
-                const risk     = mockRisk(u.id)
+                const risk      = mockRisk(u.id)
                 const lastLogin = mockLastLogin(u.id)
-                const hasMfa   = mockMfa(u.id)
-                const dept     = mockDept(u.name)
-                const bg       = avatarColor(u.name)
+                const hasMfa    = mockMfa(u.id)
+                const bg        = avatarColor(u.role, u.is_active)
                 const ini      = initials(u.name)
                 const isSel    = selected.has(u.id)
                 return (
@@ -468,9 +519,6 @@ export default function AdminUsersPage() {
                       </div>
                     </td>
 
-                    {/* Department */}
-                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.83rem' }}>{dept}</td>
-
                     {/* Role */}
                     <td style={s.td}><RoleBadge role={u.role} /></td>
 
@@ -487,11 +535,6 @@ export default function AdminUsersPage() {
                         <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: u.is_active ? T.green : T.red }} />
                         {u.is_active ? 'Active' : 'Suspended'}
                       </span>
-                    </td>
-
-                    {/* Manager (mock) */}
-                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.83rem' }}>
-                      {['James Harrington','Sarah Mitchell','David Chen','Priya Nair','Marcus Webb','Olivia Thornton','Aisha Kaur','Robert Stein'][mockRisk(u.id) % 8]}
                     </td>
 
                     {/* Risk bar */}
@@ -729,11 +772,19 @@ const s: Record<string, React.CSSProperties> = {
   pageSub:   { fontSize: '0.82rem', color: T.inkSub, marginTop: '0.25rem', maxWidth: '560px' },
   headActions:{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
 
-  // Stat cards
-  statsRow:  { display: 'grid', gridTemplateColumns: 'repeat(8,1fr)', gap: '0.75rem', marginBottom: '1.5rem' },
-  statCard:  { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '0.9rem 1rem', boxShadow: T.shadowCard },
-  statLabel: { fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: '0.4rem' },
-  statValue: { fontSize: '1.75rem', fontWeight: 700, color: T.ink, lineHeight: 1 },
+  // Stats legend strip
+  statsRow:      { marginBottom: '1.5rem' },
+  statsLegend:   {
+    display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const,
+    background: T.bgCard, border: `1px solid ${T.border}`,
+    borderRadius: T.radiusInner, padding: '0.7rem 1.25rem',
+    boxShadow: T.shadowCard, gap: '0',
+  },
+  legendItem:    { display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.3rem 0.85rem' },
+  legendDot:     { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
+  legendLabel:   { fontSize: '0.72rem', fontWeight: 600, color: T.inkSub, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
+  legendValue:   { fontSize: '1rem', fontWeight: 700, lineHeight: 1 },
+  legendDivider: { width: '1px', height: '28px', background: T.border, flexShrink: 0 },
 
   // Toolbar
   toolbar:   { display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' },

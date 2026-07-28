@@ -208,7 +208,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <button style={s.userBtn} onClick={() => setDropOpen(v => !v)}>
                 <div style={s.userBtnInfo}>
                   <div style={s.userBtnName}>{user?.name}</div>
-                  <div style={s.userBtnRole}>{user?.role}</div>
+                  <div style={s.userBtnRole}>
+                    {user?.role === 'Customer' ? 'Private Client' : user?.role === 'Admin' ? 'Administrator' : user?.role}
+                  </div>
                 </div>
                 <div style={s.avatarCircle}>{initial}</div>
                 <span style={{ color: T.inkSub, fontSize: '0.7rem' }}>▾</span>

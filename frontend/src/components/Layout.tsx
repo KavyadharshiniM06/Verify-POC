@@ -94,8 +94,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }
 
   const notifications = [
-    { id: 1, icon: '⚠', title: 'Large purchase alert', body: '$1,299 at Apple Store on card ••0044', time: '2h ago', unread: true },
-    { id: 2, icon: 'ℹ', title: 'Transfer completed', body: '$2,000 moved to High-Yield Savings', time: '3d ago', unread: false },
+    { id: 1, icon: '⚠', title: 'Large purchase alert', body: '₹1,299 at Apple Store on card ••0044', time: '2h ago', unread: true },
+    { id: 2, icon: 'ℹ', title: 'Transfer completed', body: '₹2,000 moved to High-Yield Savings', time: '3d ago', unread: false },
     { id: 3, icon: 'ℹ', title: 'New sign-in detected', body: 'Login from MacBook Pro · New York', time: '2d ago', unread: true },
   ]
   const unreadCount = notifications.filter(n => n.unread).length
@@ -208,7 +208,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <button style={s.userBtn} onClick={() => setDropOpen(v => !v)}>
                 <div style={s.userBtnInfo}>
                   <div style={s.userBtnName}>{user?.name}</div>
-                  <div style={s.userBtnRole}>{user?.role === 'Customer' ? 'Private Client' : user?.role}</div>
+                  <div style={s.userBtnRole}>{user?.role}</div>
                 </div>
                 <div style={s.avatarCircle}>{initial}</div>
                 <span style={{ color: T.inkSub, fontSize: '0.7rem' }}>▾</span>
@@ -220,6 +220,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: '0.88rem', fontWeight: 700, color: T.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</div>
                       <div style={{ fontSize: '0.72rem', color: T.inkSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email}</div>
+                      <span style={{
+                        display: 'inline-block', marginTop: '0.3rem',
+                        fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase' as const,
+                        letterSpacing: '0.06em', padding: '0.15rem 0.45rem',
+                        background: T.amberLight, color: T.amber, border: `1px solid ${T.amberBorder}`,
+                        borderRadius: '999px',
+                      }}>{user?.role}</span>
                     </div>
                   </div>
                   <div style={s.dropDivider} />

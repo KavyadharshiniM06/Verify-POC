@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -11,6 +12,8 @@ from app.auth.jwt_handler import get_current_user
 from app.database import get_db
 from app.models import AuditLog, LifecycleAction, User
 from app.services.verify_client import verify_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -169,6 +172,9 @@ class ManagedUserOut(BaseModel):
     is_active: bool
     created_at: Optional[datetime] = None
     offboarded_at: Optional[datetime] = None
+    last_login: Optional[str] = None       # ISO-8601 from IBM Verify SCIM lastLogin
+    mfa_enrolled: Optional[bool] = None    # True if twoFactorAuthentication is set
+    last_mfa_type: Optional[str] = None    # e.g. "emailotp", "totp", "fido2"
 
     model_config = {"from_attributes": True}
 
@@ -178,6 +184,11 @@ class ManagedUserListResponse(BaseModel):
     page: int
     page_size: int
     users: list[ManagedUserOut]
+
+
+def _extract_ibm_ext(item: dict) -> dict:
+    """Extract the IBM Verify SCIM extension block, tolerating missing key."""
+    return item.get("urn:ietf:params:scim:schemas:extension:ibm:2.0:User", {})
 
 
 @router.get("", response_model=ManagedUserListResponse)
@@ -205,8 +216,16 @@ async def list_managed_users(
     db_result = await db.execute(select(User).where(User.verify_user_id.in_(verify_ids)))
     db_users: dict[str, User] = {u.verify_user_id: u for u in db_result.scalars().all()}
 
-    users = [
-        ManagedUserOut(
+    users = []
+    for item in resources:
+        ext = _extract_ibm_ext(item)
+        # lastMFA is a list of {type, value} dicts; pick the most recent one
+        last_mfa_list: list[dict] = ext.get("lastMFA", [])
+        # Filter out internal keys (values with '/' are hashed method IDs, not type names)
+        clean_mfa = [m for m in last_mfa_list if "/" not in m.get("type", "")]
+        last_mfa_type = clean_mfa[0].get("type") if clean_mfa else None
+
+        users.append(ManagedUserOut(
             id=item.get("id", ""),
             email=next(
                 (email.get("value", "") for email in item.get("emails", []) if email.get("value")),
@@ -217,9 +236,10 @@ async def list_managed_users(
             is_active=item.get("active", True),
             created_at=db_users[item["id"]].created_at if item.get("id") in db_users else None,
             offboarded_at=db_users[item["id"]].offboarded_at if item.get("id") in db_users else None,
-        )
-        for item in resources
-    ]
+            last_login=ext.get("lastLogin"),
+            mfa_enrolled=bool(ext.get("twoFactorAuthentication", False)) or bool(clean_mfa),
+            last_mfa_type=last_mfa_type,
+        ))
 
     if status_filter == "active":
         users = [user for user in users if user.is_active]
@@ -465,6 +485,61 @@ async def reinstate_managed_user(
     return {"id": verify_user_id, "is_active": True}
 
 
+# ── MFA reset (admin) ────────────────────────────────────────────────────────
+
+_ALL_FACTORS = {"fido2", "totp", "push", "email_otp"}
+
+
+@router.delete("/{verify_user_id}/factors", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_user_mfa(
+    verify_user_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin: remove every enrolled MFA factor (FIDO2, TOTP, push, email OTP) for a
+    user so they are forced to re-enrol on their next login.
+    """
+    _require_admin(current_user)
+
+    result = await db.execute(select(User).where(User.verify_user_id == verify_user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    errors = []
+    for factor in _ALL_FACTORS:
+        try:
+            await verify_client.unenroll_factor(verify_user_id, factor)
+        except Exception as exc:
+            # Log but continue — one failing factor type shouldn't block the others
+            logger.warning("MFA reset: failed to unenroll %s for %s: %s", factor, verify_user_id, exc)
+            errors.append(factor)
+
+    if errors:
+        logger.error("MFA reset for %s: could not unenroll factor(s): %s", verify_user_id, errors)
+
+    # IBM Verify caches enrolled factors in the active SSO session.
+    # Disabling then immediately re-enabling the account terminates all live
+    # sessions so the user's next login re-reads enrollments from scratch.
+    try:
+        await verify_client.set_user_active(verify_user_id, False)
+        await verify_client.set_user_active(verify_user_id, True)
+    except Exception as exc:
+        logger.warning("MFA reset: session flush (disable/re-enable) failed for %s: %s", verify_user_id, exc)
+
+    await _log(
+        db,
+        target_verify_user_id=verify_user_id,
+        target_email=user.email,
+        action=LifecycleAction.mover,
+        actor=current_user,
+        details="All MFA factors removed — user must re-enrol",
+    )
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # ── Password reset ───────────────────────────────────────────────────────────
 
 @router.post("/{verify_user_id}/reset-password")
@@ -526,3 +601,34 @@ async def delete_managed_user(
     await db.execute(delete(User).where(User.verify_user_id == verify_user_id))
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Aggregate audit log (Security Center) ───────────────────────────────────
+
+@router.get("/audit/recent")
+async def get_recent_audit_log(
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return the most recent JML lifecycle events across all identities.
+    Admin-only. Used by the Security Center audit log table.
+    """
+    _require_admin(current_user)
+    result = await db.execute(
+        select(AuditLog)
+        .order_by(AuditLog.created_at.desc())
+        .limit(min(limit, 200))
+    )
+    entries = result.scalars().all()
+    return [
+        {
+            "action": e.action,
+            "actor_name": e.actor_name,
+            "target_email": e.target_email,
+            "details": e.details,
+            "created_at": e.created_at,
+        }
+        for e in entries
+    ]

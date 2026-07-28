@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # Dollar amount above which a transfer requires a fresh step-up challenge.
     # Set to 0 to require step-up for ALL transfers.
-    transfer_stepup_threshold: float = 100.0
+    transfer_stepup_threshold: float = 500.0
 
     # How long (minutes) the main session JWT remains valid.
     # Set SESSION_EXPIRE_MINUTES in .env to override (default: 60).

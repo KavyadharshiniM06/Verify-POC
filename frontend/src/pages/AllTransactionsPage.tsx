@@ -111,9 +111,9 @@ export default function AllTransactionsPage() {
                   <td style={s.td}><span style={s.badge}>{tx.category}</span></td>
                   <td style={{
                     ...s.td, textAlign: 'right', fontWeight: 600,
-                    color: tx.type === 'credit' ? T.green : T.ink,
+                    color: tx.type === 'credit' ? T.green : '#ffffff',
                   }}>
-                    {tx.type === 'credit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                    {tx.type === 'credit' ? '+' : '-'}₹{tx.amount.toFixed(2)}
                   </td>
                   <td style={{ ...s.td, textAlign: 'center' }}>
                     <span style={{

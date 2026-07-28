@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import api from '../api/axios'
 import { T } from '../styles/theme'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -286,36 +287,136 @@ function ManagerSecurityView() {
 // ─────────────────────────────────────────────────────────────────────────────
 //  ADMIN VIEW
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+interface AuditEntry {
+  action: string
+  actor_name: string
+  target_email: string
+  details: string
+  created_at: string
+}
+
+interface DirectoryUser {
+  id: string
+  is_active: boolean
+  created_at: string | null
+  mfa_enrolled: boolean | null
+}
+
+const ACTION_LABEL: Record<string, string> = {
+  joiner:           'User onboarded',
+  mover:            'Role / profile changed',
+  leaver_disable:   'Access suspended',
+  leaver_reinstate: 'Access reinstated',
+  leaver_delete:    'Identity deleted',
+}
+
+const ACTION_SEVERITY: Record<string, string> = {
+  joiner:           'info',
+  mover:            'warning',
+  leaver_disable:   'warning',
+  leaver_reinstate: 'info',
+  leaver_delete:    'high',
+}
+
+const SEVER_COLOR: Record<string, string> = {
+  info: T.blue, warning: T.amber, medium: T.amber, high: T.red,
+}
+
+function formatRelativeTime(iso: string): string {
+  try {
+    const diff = Date.now() - new Date(iso).getTime()
+    const mins  = Math.floor(diff / 60_000)
+    const hours = Math.floor(diff / 3_600_000)
+    const days  = Math.floor(diff / 86_400_000)
+    if (mins  <  2) return 'Just now'
+    if (mins  < 60) return `${mins}m ago`
+    if (hours < 24) return `${hours}h ago`
+    if (days  <  2) return 'Yesterday'
+    return `${days} days ago`
+  } catch {
+    return '—'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ADMIN VIEW
+// ─────────────────────────────────────────────────────────────────────────────
 function AdminSecurityView() {
-  const orgScore = 74
-  const orgAlerts: Alert[] = [
-    { level: 'high',   title: '4 users have no MFA enrolled',       detail: 'Enforce MFA policy or suspend access for these accounts.' },
-    { level: 'medium', title: '3 high-risk sign-in attempts (24h)', detail: 'Adaptive risk engine flagged anomalous login behaviour.' },
-    { level: 'low',    title: 'Password policy not enforced for 2 federated users', detail: 'Review identity provider password settings.' },
-  ]
+  const [auditLog,   setAuditLog]   = useState<AuditEntry[]>([])
+  const [auditLoading, setAuditLoading] = useState(true)
+  const [dirUsers,   setDirUsers]   = useState<DirectoryUser[]>([])
+  const [dirLoading, setDirLoading] = useState(true)
+
+  // Fetch real JML audit log
+  useEffect(() => {
+    api.get<AuditEntry[]>('/users/audit/recent', { params: { limit: 50 } })
+      .then(r => setAuditLog(r.data))
+      .catch(() => setAuditLog([]))
+      .finally(() => setAuditLoading(false))
+  }, [])
+
+  // Fetch directory for real counts — reuses the existing /users endpoint
+  useEffect(() => {
+    api.get<{ users: DirectoryUser[]; total: number }>('/users', { params: { page_size: 200 } })
+      .then(r => setDirUsers(r.data.users))
+      .catch(() => setDirUsers([]))
+      .finally(() => setDirLoading(false))
+  }, [])
+
+  const loading = auditLoading || dirLoading
+
+  // Derive real counts from directory (all from IBM Verify SCIM — no audit events needed)
+  const totalIdentities = dirUsers.length
+  const activeCount     = dirUsers.filter(u => u.is_active).length
+  const suspendedCount  = dirUsers.filter(u => !u.is_active).length
+  const mfaEnrolled     = dirUsers.filter(u => u.mfa_enrolled === true).length
+  const mfaNotEnrolled  = dirUsers.filter(u => u.mfa_enrolled === false).length
+  const now = Date.now()
+  const joined7d = dirUsers.filter(u => {
+    try { return u.created_at && now - new Date(u.created_at).getTime() < 7 * 86_400_000 }
+    catch { return false }
+  }).length
+
+  const suspendEvents = auditLog.filter(e => e.action === 'leaver_disable').length
+
+  // Score: penalise for suspended accounts and users without MFA
+  const orgScore = loading ? 0 : Math.max(
+    40,
+    Math.round(
+      100
+      - (suspendedCount  / Math.max(totalIdentities, 1)) * 25
+      - (mfaNotEnrolled  / Math.max(totalIdentities, 1)) * 30
+      - suspendEvents * 2
+    )
+  )
 
   const orgStats = [
-    { label: 'Total Identities',    value: 42, color: T.inkSub },
-    { label: 'Active',              value: 40, color: T.green  },
-    { label: 'Suspended',           value: 2,  color: T.red    },
-    { label: 'MFA Enrolled',        value: 38, color: T.blue   },
-    { label: 'MFA Not Enrolled',    value: 4,  color: T.amber  },
-    { label: 'High-Risk Users',     value: 3,  color: T.red    },
-    { label: 'Failed Logins (24h)', value: 7,  color: T.amber  },
-    { label: 'New Joiners (7d)',    value: 6,  color: T.green  },
+    { label: 'Total Identities',    value: loading ? '…' : totalIdentities,                          color: T.inkSub },
+    { label: 'Active',              value: loading ? '…' : activeCount,                               color: T.green  },
+    { label: 'Suspended',           value: loading ? '…' : suspendedCount,                            color: T.red    },
+    { label: 'New Joiners (7d)',    value: loading ? '…' : joined7d,                                  color: T.green  },
+    { label: 'MFA Enrolled',        value: loading ? '…' : mfaEnrolled,                               color: T.blue   },
+    { label: 'MFA Not Enrolled',    value: loading ? '…' : mfaNotEnrolled,                            color: T.amber  },
+    { label: 'Failed Logins (24h)', value: '—',                                                        color: T.amber  },
+    { label: 'High-Risk Users',     value: '—',                                                        color: T.red    },
   ]
 
-  const auditLog = [
-    { time: 'Today, 09:14',     actor: 'Admin (James Bob)',  action: 'User onboarded',          target: 'alice@mockbank.com',  severity: 'info'    },
-    { time: 'Today, 08:45',     actor: 'System',             action: 'High-risk sign-in blocked', target: 'rohit@mockbank.com', severity: 'high'    },
-    { time: 'Yesterday, 17:22', actor: 'Admin (James Bob)',  action: 'Role changed to Manager', target: 'bob@mockbank.com',    severity: 'warning' },
-    { time: 'Yesterday, 14:10', actor: 'System',             action: 'Failed login (×3)',        target: 'liam@mockbank.com',  severity: 'medium'  },
-    { time: '2 days ago, 11:00',actor: 'Admin (James Bob)',  action: 'User suspended',           target: 'old@mockbank.com',   severity: 'warning' },
+  const orgAlerts: Alert[] = [
+    ...(mfaNotEnrolled > 0 ? [{
+      level: 'high' as const,
+      title: `${mfaNotEnrolled} user${mfaNotEnrolled > 1 ? 's have' : ' has'} no MFA enrolled`,
+      detail: 'Enforce MFA policy or suspend access for these accounts.',
+    }] : []),
+    ...(suspendedCount > 0 ? [{
+      level: 'medium' as const,
+      title: `${suspendedCount} account${suspendedCount > 1 ? 's' : ''} currently suspended`,
+      detail: 'Review suspended identities and confirm offboarding is complete.',
+    }] : []),
   ]
 
-  const SEVER_COLOR: Record<string, string> = {
-    info: T.blue, warning: T.amber, medium: T.amber, high: T.red,
-  }
+  const SEVER_COLOR_LOCAL: Record<string, string> = SEVER_COLOR
 
   const SECURITY_POLICIES = [
     {
@@ -391,6 +492,11 @@ function AdminSecurityView() {
             </React.Fragment>
           ))}
         </div>
+        {loading && (
+          <div style={{ fontSize: '0.72rem', color: T.inkSub, marginTop: '0.4rem', paddingLeft: '0.5rem' }}>
+            Loading live data…
+          </div>
+        )}
       </div>
 
       <div style={s.topRow}>
@@ -455,34 +561,49 @@ function AdminSecurityView() {
       <div style={s.card}>
         <div style={s.cardTitleRow}>
           <div style={s.cardTitle}>Security Audit Log</div>
-          <button style={s.exportBtn}>Export CSV</button>
+          <span style={{ fontSize: '0.75rem', color: T.inkSub }}>Identity lifecycle events · live from local DB</span>
         </div>
-        <table style={s.table}>
-          <thead><tr>
-            {['Time','Actor','Action','Target','Severity'].map(h => (
-              <th key={h} style={s.th}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {auditLog.map((row, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
-                <td style={{ ...s.td, color: T.inkSub, fontSize: '0.79rem' }}>{row.time}</td>
-                <td style={{ ...s.td, fontSize: '0.83rem' }}>{row.actor}</td>
-                <td style={{ ...s.td, fontSize: '0.83rem', fontWeight: 500 }}>{row.action}</td>
-                <td style={{ ...s.td, fontSize: '0.8rem', color: T.inkSub }}>{row.target}</td>
-                <td style={s.td}>
-                  <span style={{ ...s.badge,
-                    color: SEVER_COLOR[row.severity],
-                    background: SEVER_COLOR[row.severity] + '18',
-                    border: `1px solid ${SEVER_COLOR[row.severity]}33`,
-                  }}>
-                    {row.severity}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {auditLoading ? (
+          <div style={{ fontSize: '0.85rem', color: T.inkSub, padding: '1rem 0' }}>Loading audit log…</div>
+        ) : auditLog.length === 0 ? (
+          <div style={{ fontSize: '0.85rem', color: T.inkSub, padding: '1rem 0' }}>No lifecycle events recorded yet.</div>
+        ) : (
+          <table style={s.table}>
+            <thead><tr>
+              {['Time','Actor','Action','Target','Severity'].map(h => (
+                <th key={h} style={s.th}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {auditLog.map((row, i) => {
+                const severity = ACTION_SEVERITY[row.action] ?? 'info'
+                const sevColor = SEVER_COLOR_LOCAL[severity] ?? T.blue
+                return (
+                  <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
+                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.79rem' }}>
+                      {formatRelativeTime(row.created_at)}
+                    </td>
+                    <td style={{ ...s.td, fontSize: '0.83rem' }}>{row.actor_name}</td>
+                    <td style={{ ...s.td, fontSize: '0.83rem', fontWeight: 500 }}>
+                      {ACTION_LABEL[row.action] ?? row.action}
+                      {row.details ? <span style={{ fontWeight: 400, color: T.inkSub }}> — {row.details}</span> : null}
+                    </td>
+                    <td style={{ ...s.td, fontSize: '0.8rem', color: T.inkSub }}>{row.target_email}</td>
+                    <td style={s.td}>
+                      <span style={{ ...s.badge,
+                        color: sevColor,
+                        background: sevColor + '18',
+                        border: `1px solid ${sevColor}33`,
+                      }}>
+                        {severity}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </>
   )

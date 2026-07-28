@@ -47,10 +47,10 @@ export default function TransferPage() {
 
   const fromAccount = accounts.find(a => String(a.id) === fromId)
   const amt = parseFloat(amount)
-  const needsMfa = !isNaN(amt) && amt > 100
+  const needsMfa = !isNaN(amt) && amt > 500
 
   const accountLabel = (a: Account) =>
-    `${a.type.charAt(0).toUpperCase() + a.type.slice(1)} ••${a.account_number.slice(-4)} — $${a.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+    `${a.type.charAt(0).toUpperCase() + a.type.slice(1)} ••${a.account_number.slice(-4)} — ₹${a.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 
   function handleSwap() {
     setFromId(toId)
@@ -111,7 +111,7 @@ export default function TransferPage() {
       const amt = lastTransfer.amount
       setLastTransfer(null)
       sessionStorage.removeItem('mb_last_transfer')
-      setSuccess(`Transfer of $${amt.toFixed(2)} has been reversed.`)
+      setSuccess(`Transfer of ₹${amt.toFixed(2)} has been reversed.`)
       const { data: fresh } = await api.get<Account[]>('/banking/accounts')
       setAccounts(fresh)
     } catch (e: unknown) {
@@ -160,7 +160,7 @@ export default function TransferPage() {
             </div>
             {fromAccount && (
               <div style={s.available}>
-                Available: <strong style={{ color: T.ink }}>${fromAccount.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                Available: <strong style={{ color: T.ink }}>₹{fromAccount.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
               </div>
             )}
           </div>
@@ -187,9 +187,9 @@ export default function TransferPage() {
 
           {/* Amount */}
           <div style={s.fieldGroup}>
-            <label style={s.fieldLabel}>AMOUNT (USD)</label>
+            <label style={s.fieldLabel}>AMOUNT (INR)</label>
             <div style={s.amountWrapper}>
-              <span style={s.amountPrefix}>$</span>
+              <span style={s.amountPrefix}>₹</span>
               <input
                 style={s.amountInput}
                 type="number" min="0.01" step="0.01" placeholder="0.00"
@@ -197,7 +197,7 @@ export default function TransferPage() {
               />
             </div>
             {needsMfa && (
-              <div style={s.mfaHint}>🔐 Transfers over $100 require MFA verification</div>
+              <div style={s.mfaHint}>🔐 Transfers over ₹500 require MFA verification</div>
             )}
           </div>
 
@@ -225,7 +225,7 @@ export default function TransferPage() {
             <div style={s.infoPanelTitle}>Transfer Info</div>
             {[
               { icon: '⚡', title: 'Instant transfers', sub: 'Between your own accounts' },
-              { icon: '🔐', title: 'Step-up MFA', sub: 'Required for amounts over $100' },
+              { icon: '🔐', title: 'Step-up MFA', sub: 'Required for amounts over ₹500' },
               { icon: '📋', title: 'Full history', sub: 'All transfers are logged' },
             ].map(item => (
               <div key={item.title} style={s.infoRow}>
@@ -250,7 +250,7 @@ export default function TransferPage() {
                   <div style={s.balanceAcctSub}>••••{a.account_number.slice(-4)}</div>
                 </div>
                 <div style={{ ...s.balanceAmt, color: a.balance < 0 ? T.red : T.ink }}>
-                  {a.balance < 0 ? '-' : ''}${Math.abs(a.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {a.balance < 0 ? '-' : ''}₹{Math.abs(a.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
               </div>
             ))}

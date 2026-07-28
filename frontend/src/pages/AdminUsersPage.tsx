@@ -12,6 +12,9 @@ interface ManagedUser {
   is_active: boolean
   created_at: string
   offboarded_at: string | null
+  last_login: string | null
+  mfa_enrolled: boolean | null
+  last_mfa_type: string | null
 }
 
 interface AuditEntry {
@@ -68,24 +71,30 @@ function mockDept(name: string) {
   return DEPARTMENTS[h % DEPARTMENTS.length]
 }
 
-// ─── Mock "risk score" and "last login" from id ───────────────────────────────
-function mockRisk(id: string) {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 13 + id.charCodeAt(i)) >>> 0
-  return (h % 80) + 5        // 5–84
-}
-function mockLastLogin(id: string) {
-  const options = ['Just now','2m ago','15m ago','1h ago','2h ago','3h ago','5h ago','1d ago','2d ago','3d ago']
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 7 + id.charCodeAt(i)) >>> 0
-  return options[h % options.length]
-}
-function mockMfa(id: string) {
-  let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 11 + id.charCodeAt(i)) >>> 0
-  return h % 3 !== 0   // ~66% have MFA
+// ─── Real last-login formatter ────────────────────────────────────────────────
+function formatLastLogin(iso: string | null): string {
+  if (!iso) return '—'
+  try {
+    const diff  = Date.now() - new Date(iso).getTime()
+    const mins  = Math.floor(diff / 60_000)
+    const hours = Math.floor(diff / 3_600_000)
+    const days  = Math.floor(diff / 86_400_000)
+    if (mins  <  2) return 'Just now'
+    if (mins  < 60) return `${mins}m ago`
+    if (hours < 24) return `${hours}h ago`
+    if (days  <  2) return 'Yesterday'
+    if (days  <  7) return `${days}d ago`
+    return new Date(iso).toLocaleDateString()
+  } catch { return '—' }
 }
 
+const MFA_LABEL: Record<string, string> = {
+  fido2:    'Passkey',
+  totp:     'TOTP',
+  push:     'Push',
+  emailotp: 'Email OTP',
+  password: 'Password',
+}
 // ─── SVG icons ────────────────────────────────────────────────────────────────
 function SearchIcon() {
   return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -93,23 +102,8 @@ function SearchIcon() {
 function RefreshIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
 }
-function DownloadIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-}
-function UploadIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-}
-function ShieldOnIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-}
-function ShieldOffIcon() {
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.inkLight} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-}
 function DotsIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
-}
-function FilterIcon() {
-  return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
 }
 function XIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -136,20 +130,6 @@ function RoleBadge({ role }: { role: string }) {
   )
 }
 
-// ─── Risk bar ─────────────────────────────────────────────────────────────────
-function RiskBar({ score }: { score: number }) {
-  const pct = Math.min(score, 100)
-  const color = pct < 30 ? T.green : pct < 60 ? T.amber : T.red
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <div style={{ width: '72px', height: '5px', background: T.bgMuted, borderRadius: '99px', overflow: 'hidden', flexShrink: 0 }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: '99px' }} />
-      </div>
-      <span style={{ fontSize: '0.75rem', color: T.inkSub, fontWeight: 600, minWidth: '20px' }}>{score}</span>
-    </div>
-  )
-}
-
 // ─── Per-row action dropdown ──────────────────────────────────────────────────
 function ActionMenu({
   user,
@@ -159,14 +139,27 @@ function ActionMenu({
   onEdit: () => void; onHistory: () => void; onResetPwd: () => void
   onDisable: () => void; onReinstate: () => void; onDelete: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen]       = useState(false)
+  const [flipUp, setFlipUp]   = useState(false)
+  const ref    = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
 
+  // Close on outside click
   useEffect(() => {
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [])
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      // Approximate menu height: 7 items × ~34px + padding ≈ 260px
+      const MENU_H = 260
+      const rect = btnRef.current.getBoundingClientRect()
+      setFlipUp(rect.bottom + MENU_H > window.innerHeight)
+    }
+    setOpen(v => !v)
+  }
 
   const item = (label: string, color: string, onClick: () => void) => (
     <button
@@ -178,20 +171,25 @@ function ActionMenu({
     </button>
   )
 
+  const menuPos: React.CSSProperties = flipUp
+    ? { bottom: 'calc(100% + 4px)', top: 'auto' }
+    : { top: 'calc(100% + 4px)',    bottom: 'auto' }
+
   return (
     <div style={{ position: 'relative' }} ref={ref}>
       <button
+        ref={btnRef}
         style={m.dotsBtn}
-        onClick={() => setOpen(v => !v)}
+        onClick={toggle}
         title="Actions"
       >
         <DotsIcon />
       </button>
       {open && (
-        <div style={m.menu}>
-          {item('Edit user',       T.ink,   onEdit)}
-          {item('View history',    T.ink,   onHistory)}
-          {item('Reset password',  T.ink, onResetPwd)}
+        <div style={{ ...m.menu, ...menuPos }}>
+          {item('Edit user',      T.ink, onEdit)}
+          {item('View history',   T.ink, onHistory)}
+          {item('Reset password', T.ink, onResetPwd)}
           <div style={m.menuDivider} />
           {user.is_active
             ? item('Suspend access', T.ink, onDisable)
@@ -240,7 +238,6 @@ export default function AdminUsersPage() {
   const [auditFor,     setAuditFor]     = useState<ManagedUser | null>(null)
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([])
   const [tempPwdModal, setTempPwdModal] = useState<TempPasswordModal>(null)
-  const [selected,     setSelected]     = useState<Set<string>>(new Set())
 
   const load = () => {
     setLoading(true)
@@ -341,14 +338,6 @@ export default function AdminUsersPage() {
   }
 
   // ── Select all ───────────────────────────────────────────────────────────
-  const allSelected = filtered.length > 0 && filtered.every(u => selected.has(u.id))
-  const toggleAll   = () => setSelected(allSelected ? new Set() : new Set(filtered.map(u => u.id)))
-  const toggleOne   = (id: string) => setSelected(prev => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
-
   if (me?.role !== 'Admin') {
     return <div style={{ padding: '3rem', textAlign: 'center', color: T.inkSub }}>Admin role required.</div>
   }
@@ -453,11 +442,6 @@ export default function AdminUsersPage() {
               <option key={v}>Role: {v}</option>
             ))}
           </select>
-          <button style={s.filterSelect}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <FilterIcon /> More
-            </span>
-          </button>
         </div>
       </div>
 
@@ -469,14 +453,10 @@ export default function AdminUsersPage() {
           <table style={s.table}>
             <thead>
               <tr style={s.thead}>
-                <th style={{ ...s.th, width: '36px' }}>
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} style={s.cb} />
-                </th>
                 <th style={s.th}>User</th>
                 <th style={s.th}>Role</th>
                 <th style={s.th}>Status</th>
-                <th style={s.th}>Risk</th>
-                <th style={{ ...s.th, textAlign: 'center' }}>MFA</th>
+                <th style={s.th}>MFA</th>
                 <th style={s.th}>Last Login</th>
                 <th style={{ ...s.th, textAlign: 'center' }}>Actions</th>
               </tr>
@@ -484,28 +464,20 @@ export default function AdminUsersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ ...s.td, textAlign: 'center', color: T.inkSub, padding: '3rem' }}>
+                  <td colSpan={6} style={{ ...s.td, textAlign: 'center', color: T.inkSub, padding: '3rem' }}>
                     No users match your search.
                   </td>
                 </tr>
               )}
               {filtered.map((u, idx) => {
-                const risk      = mockRisk(u.id)
-                const lastLogin = mockLastLogin(u.id)
-                const hasMfa    = mockMfa(u.id)
-                const bg        = avatarColor(u.role, u.is_active)
-                const ini      = initials(u.name)
-                const isSel    = selected.has(u.id)
+                const bg  = avatarColor(u.role, u.is_active)
+                const ini = initials(u.name)
+                const mfaLabel = u.last_mfa_type ? (MFA_LABEL[u.last_mfa_type] ?? u.last_mfa_type) : null
                 return (
                   <tr
                     key={u.id}
-                    style={{ ...s.tr, background: isSel ? T.amberLight : idx % 2 === 0 ? T.bgCard : T.bgMuted }}
+                    style={{ ...s.tr, background: idx % 2 === 0 ? T.bgCard : T.bgMuted }}
                   >
-                    {/* Checkbox */}
-                    <td style={s.td}>
-                      <input type="checkbox" checked={isSel} onChange={() => toggleOne(u.id)} style={s.cb} />
-                    </td>
-
                     {/* User */}
                     <td style={s.td}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
@@ -537,16 +509,33 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
 
-                    {/* Risk bar */}
-                    <td style={s.td}><RiskBar score={risk} /></td>
-
-                    {/* MFA */}
-                    <td style={{ ...s.td, textAlign: 'center' }}>
-                      {hasMfa ? <ShieldOnIcon /> : <ShieldOffIcon />}
+                    {/* MFA status (real from IBM Verify SCIM) */}
+                    <td style={s.td}>
+                      {u.mfa_enrolled === null ? (
+                        <span style={{ fontSize: '0.78rem', color: T.inkSub }}>—</span>
+                      ) : u.mfa_enrolled ? (
+                        <span style={{
+                          fontSize: '0.7rem', fontWeight: 700, padding: '0.18rem 0.5rem',
+                          borderRadius: '999px', background: T.greenLight, color: T.green,
+                          border: `1px solid ${T.greenBorder}`,
+                        }}>
+                          {mfaLabel ?? '✓ Enrolled'}
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: '0.7rem', fontWeight: 700, padding: '0.18rem 0.5rem',
+                          borderRadius: '999px', background: T.amberLight, color: T.amber,
+                          border: `1px solid ${T.amberBorder}`,
+                        }}>
+                          No MFA
+                        </span>
+                      )}
                     </td>
 
-                    {/* Last login */}
-                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.82rem' }}>{lastLogin}</td>
+                    {/* Last login (real from IBM Verify SCIM) */}
+                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.82rem' }}>
+                      {formatLastLogin(u.last_login)}
+                    </td>
 
                     {/* Actions */}
                     <td style={{ ...s.td, textAlign: 'center' }}>
@@ -571,7 +560,6 @@ export default function AdminUsersPage() {
           <div style={s.tableFooter}>
             <span style={{ color: T.inkSub, fontSize: '0.8rem' }}>
               Showing {filtered.length} of {total} users
-              {selected.size > 0 && ` · ${selected.size} selected`}
             </span>
             <div style={{ display: 'flex', gap: '0.4rem' }}>
               <button style={s.pageBtn} disabled>‹ Prev</button>
@@ -848,10 +836,16 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
   },
 
-  // Error
+  // Notifications
   errorBox: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red,
+    borderRadius: T.radiusInner, padding: '0.6rem 0.9rem',
+    fontSize: '0.83rem', marginBottom: '1rem',
+  },
+  toastBox: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    background: T.greenLight, border: `1px solid ${T.greenBorder}`, color: T.green,
     borderRadius: T.radiusInner, padding: '0.6rem 0.9rem',
     fontSize: '0.83rem', marginBottom: '1rem',
   },

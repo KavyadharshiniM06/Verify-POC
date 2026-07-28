@@ -208,8 +208,8 @@ export default function CardsPage() {
               <div>
                 <div style={s.balanceLabel}>Available Balance</div>
                 <div style={s.balanceValue}>
-                  {card.balance < 0 ? '-' : ''}${Math.abs(card.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  <span style={s.balanceCcy}>{card.currency ?? 'USD'}</span>
+                  {card.balance < 0 ? '-' : ''}₹{Math.abs(card.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  <span style={s.balanceCcy}>INR</span>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -249,7 +249,7 @@ export default function CardsPage() {
                   { label: 'Card Number',  value: maskNumber(card.account_number) },
                   { label: 'Expires',      value: getExpiry(card.id) },
                   { label: 'Status',       value: 'Active', highlight: T.green },
-                  { label: 'Daily Limit',  value: '$5,000.00' },
+                  { label: 'Daily Limit',  value: '₹5,000.00' },
                   { label: 'Online Txns',  value: 'Enabled', highlight: T.green },
                   { label: 'Contactless',  value: 'Enabled', highlight: T.green },
                 ].map(row => (
@@ -287,8 +287,8 @@ export default function CardsPage() {
                           {tx.category} · {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </div>
                       </div>
-                      <div style={{ ...s.txnAmt, color: isCredit ? T.green : T.ink }}>
-                        {isCredit ? '+' : '-'}${tx.amount.toFixed(2)}
+                      <div style={{ ...s.txnAmt, color: isCredit ? T.green : '#ffffff' }}>
+                        {isCredit ? '+' : '-'}₹{tx.amount.toFixed(2)}
                       </div>
                     </div>
                   )

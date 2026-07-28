@@ -39,7 +39,7 @@ class VerifyClient:
             settings.verify_oidc_token_url,
             data={
                 "grant_type": "client_credentials",
-                "scope": "manageAuthFactors authenticatorConfig manageUsers readUsers manageUserStandardGroups readUserGroups",
+                "scope": "manageAuthFactors authenticatorConfig manageUsers readUsers manageUserStandardGroups readUserGroups readActivity",
             },
             headers={
                 "Authorization": f"Basic {encoded}",
@@ -529,50 +529,85 @@ class VerifyClient:
         """
         Delete all registrations of a given factor type for a user from IBM Verify.
         factor_type is one of: fido2, totp, push, email_otp
-        Uses client_credentials token — ROPC is blocked by adaptive access.
+        Uses admin headers (ROPC if configured, else client_credentials) for the
+        manageAuthFactors scope required by DELETE on factor registration endpoints.
+        Raises on any unexpected HTTP error so the caller can surface the failure.
         """
-        headers = await self._headers()
+        # Factor management APIs require manageAuthFactors scope — use admin token
+        headers = await self._admin_headers()
 
         if factor_type == "fido2":
-            url = (
-                f"{settings.verify_tenant_url}/v2.0/factors/fido2/relyingparties"
-                f"/{settings.fido2_rp_id}/registrations"
-            )
-            r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
-            if r.is_success:
-                for reg in r.json().get("fido2", r.json().get("registrations", [])):
-                    rid = reg.get("id")
-                    if rid:
-                        await self._client.delete(f"{url}/{rid}", headers=headers)
+            # Use the tenant-wide endpoint and filter client-side by userId.
+            # The per-RP endpoint ignores the userId query param server-side.
+            url = f"{settings.verify_tenant_url}/v2.0/factors/fido2/registrations"
+            r = await self._client.get(url, headers=headers)
+            logger.info("FIDO2 list for unenroll: status=%s body=%s", r.status_code, r.text[:400])
+            if r.status_code == 404:
+                return
+            r.raise_for_status()
+            all_regs = r.json().get("fido2", r.json().get("registrations", []))
+            regs = [reg for reg in all_regs if reg.get("userId") == verify_user_id]
+            logger.info("FIDO2 regs for user %s: %s", verify_user_id, regs)
+            for reg in regs:
+                rid = reg.get("id")
+                if rid:
+                    dr = await self._client.delete(f"{url}/{rid}", headers=headers)
+                    logger.info("FIDO2 delete %s: %s", rid, dr.status_code)
+                    if not dr.is_success:
+                        logger.warning("FIDO2 delete %s failed %s: %s", rid, dr.status_code, dr.text[:200])
 
         elif factor_type == "totp":
             url = f"{settings.verify_tenant_url}/v2.0/factors/totp/registrations"
             r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
-            if r.is_success:
-                regs = r.json().get("totpRegistrations", r.json().get("registrations", []))
-                for reg in regs:
-                    rid = reg.get("id")
-                    if rid:
-                        await self._client.delete(f"{url}/{rid}", headers=headers)
+            logger.info("TOTP list for unenroll user=%s: status=%s body=%s", verify_user_id, r.status_code, r.text[:400])
+            if r.status_code == 404:
+                return
+            r.raise_for_status()
+            regs = r.json().get("totpRegistrations", r.json().get("registrations", []))
+            logger.info("TOTP regs for user %s: %s", verify_user_id, regs)
+            for reg in regs:
+                rid = reg.get("id")
+                if rid:
+                    dr = await self._client.delete(f"{url}/{rid}", headers=headers)
+                    logger.info("TOTP delete %s: %s %s", rid, dr.status_code, dr.text[:200])
+                    if not dr.is_success:
+                        logger.warning("TOTP delete %s failed %s: %s", rid, dr.status_code, dr.text[:200])
 
         elif factor_type == "push":
             url = f"{settings.verify_tenant_url}/v2.0/factors/push/registrations"
             r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
-            if r.is_success:
-                regs = r.json().get("pushRegistrations", r.json().get("registrations", []))
-                for reg in regs:
-                    rid = reg.get("id")
-                    if rid:
-                        await self._client.delete(f"{url}/{rid}", headers=headers)
+            logger.info("Push list for unenroll user=%s: status=%s body=%s", verify_user_id, r.status_code, r.text[:400])
+            if r.status_code == 404:
+                return
+            r.raise_for_status()
+            regs = r.json().get("pushRegistrations", r.json().get("registrations", []))
+            logger.info("Push regs for user %s: %s", verify_user_id, regs)
+            for reg in regs:
+                rid = reg.get("id")
+                if rid:
+                    dr = await self._client.delete(f"{url}/{rid}", headers=headers)
+                    logger.info("Push delete %s: %s %s", rid, dr.status_code, dr.text[:200])
+                    if not dr.is_success:
+                        logger.warning("Push delete %s failed %s: %s", rid, dr.status_code, dr.text[:200])
 
         elif factor_type == "email_otp":
             url = f"{settings.verify_tenant_url}/v2.0/factors/emailotp"
-            r = await self._client.get(url, params={"userId": verify_user_id}, headers=headers)
-            if r.is_success:
-                for reg in r.json().get("emailotp", []):
-                    rid = reg.get("id")
-                    if rid:
-                        await self._client.delete(f"{url}/{rid}", headers=headers)
+            r = await self._client.get(
+                url,
+                params={"search": f'userId = "{verify_user_id}"'},
+                headers=headers,
+            )
+            logger.info("EmailOTP list for unenroll user=%s: status=%s body=%s", verify_user_id, r.status_code, r.text[:400])
+            if r.status_code == 404:
+                return
+            r.raise_for_status()
+            for reg in r.json().get("emailotp", []):
+                rid = reg.get("id")
+                if rid:
+                    dr = await self._client.delete(f"{url}/{rid}", headers=headers)
+                    logger.info("EmailOTP delete %s: %s %s", rid, dr.status_code, dr.text[:200])
+                    if not dr.is_success:
+                        logger.warning("Email OTP delete %s failed %s: %s", rid, dr.status_code, dr.text[:200])
 
     async def get_enrolled_factors(self, verify_user_id: str) -> dict:
         """

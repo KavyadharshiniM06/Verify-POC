@@ -212,9 +212,9 @@ function CustomerDashboard() {
         <div style={s.chartCard}>
           <div style={s.chartCardTop}>
             <div>
-              <div style={s.chartCardLabel}>TOTAL NET WORTH · USD</div>
+              <div style={s.chartCardLabel}>TOTAL NET WORTH · INR</div>
               <div style={s.chartCardValue}>
-                ${netWorth.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                ₹{netWorth.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </div>
               <div style={{ ...s.changePill, color: T.green, fontSize: '0.82rem', marginTop: '0.5rem' }}>
                 <ArrowUpIcon /> +4.8% MoM
@@ -234,10 +234,12 @@ function CustomerDashboard() {
               </defs>
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: T.inkSub }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10, fill: T.inkSub }} axisLine={false} tickLine={false}
-                tickFormatter={(v: number) => `$${(v/1000).toFixed(0)}k`} width={45} />
+                tickFormatter={(v: number) => `₹${(v/1000).toFixed(0)}k`} width={45} />
               <Tooltip
                 contentStyle={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.ink }}
-                formatter={(v: number) => [`$${v.toLocaleString()}`, 'Balance']}
+                itemStyle={{ color: '#ffffff' }}
+                labelStyle={{ color: '#ffffff' }}
+                formatter={(v: number) => [`₹${v.toLocaleString('en-IN')}`, 'Balance']}
               />
               <Area type="monotone" dataKey="value" stroke={T.amber} strokeWidth={2}
                 fill="url(#netGrad)" dot={false} />
@@ -251,9 +253,9 @@ function CustomerDashboard() {
             <div>
               <div style={s.spendLabel}>SPENDING THIS MONTH</div>
               <div style={s.spendValue}>
-                ${totalExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                ₹{totalExpenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </div>
-              <div style={s.spendBudget}>Budget $5,000.00 · {Math.round((totalExpenses / 5000) * 100)}% used</div>
+              <div style={s.spendBudget}>Budget ₹5,000.00 · {Math.round((totalExpenses / 5000) * 100)}% used</div>
             </div>
             <span style={{ ...s.onTrackPill, background: totalExpenses < 4500 ? T.greenLight : T.orangeLight, color: totalExpenses < 4500 ? T.green : T.orange }}>
               {totalExpenses < 4500 ? '✓ On track' : '⚠ Near limit'}
@@ -268,10 +270,12 @@ function CustomerDashboard() {
               <XAxis dataKey="category" tick={{ fontSize: 10, fill: T.inkSub }} axisLine={false} tickLine={false}
                 tickFormatter={(v: string) => v.split(' ')[0]} />
               <YAxis tick={{ fontSize: 10, fill: T.inkSub }} axisLine={false} tickLine={false}
-                tickFormatter={(v: number) => `$${v.toFixed(0)}`} width={45} />
+                tickFormatter={(v: number) => `₹${v.toFixed(0)}`} width={45} />
               <Tooltip
                 contentStyle={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.ink }}
-                formatter={(v: number) => [`$${v.toFixed(2)}`]}
+                itemStyle={{ color: '#ffffff' }}
+                labelStyle={{ color: '#ffffff' }}
+                formatter={(v: number) => [`₹${v.toFixed(2)}`]}
               />
               <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                 {(summary?.spending_by_category ?? []).slice(0, 6).map((_, i) => (
@@ -307,9 +311,9 @@ function CustomerDashboard() {
                 </span>
               </div>
               <div style={s.accountBalance}>
-                {isNeg ? '-' : ''}${Math.abs(a.balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {isNeg ? '-' : ''}₹{Math.abs(a.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </div>
-              <div style={s.accountCurrency}>{a.currency ?? 'USD'}</div>
+              <div style={s.accountCurrency}>INR</div>
             </div>
           )
         })}
@@ -338,8 +342,8 @@ function CustomerDashboard() {
                   <div style={s.activityCat}>{tx.category}</div>
                 </div>
                 <div>
-                  <div style={{ ...s.activityAmt, color: isCredit ? T.green : T.ink }}>
-                    {isCredit ? '+' : '-'}${tx.amount.toFixed(2)}
+                  <div style={{ ...s.activityAmt, color: isCredit ? T.green : '#ffffff' }}>
+                    {isCredit ? '+' : '-'}₹{tx.amount.toFixed(2)}
                   </div>
                   <div style={s.activityDate}>
                     {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -406,8 +410,8 @@ function ManagerDashboard({ isAdmin }: { isAdmin: boolean }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
         {[
           { label: 'ACTIVE CUSTOMERS', value: data.total_customers, sub: `+${data.new_customers_30d} this month`, up: true },
-          { label: 'TRANSACTION VOLUME', value: `$${(data.transaction_volume_30d/1000).toFixed(1)}k`, sub: `${data.transaction_count_30d} transactions`, up: true },
-          { label: 'TOTAL ASSETS', value: `$${(data.total_assets/1000).toFixed(1)}k`, sub: 'all customer balances', up: true },
+          { label: 'TRANSACTION VOLUME', value: `₹${(data.transaction_volume_30d/1000).toFixed(1)}k`, sub: `${data.transaction_count_30d} transactions`, up: true },
+          { label: 'TOTAL ASSETS', value: `₹${(data.total_assets/1000).toFixed(1)}k`, sub: 'all customer balances', up: true },
         ].map(k => (
           <div key={k.label} style={s.kpiCard}>
             <div style={s.kpiLabel}>{k.label}</div>
@@ -422,9 +426,14 @@ function ManagerDashboard({ isAdmin }: { isAdmin: boolean }) {
         <div style={s.panelTitle}>Top Spending Categories — Last 90 Days</div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data.top_categories} layout="vertical" margin={{ left: 0 }}>
-            <XAxis type="number" tick={{ fontSize: 10, fill: T.ink }} tickFormatter={(v: number) => `$${(v/1000).toFixed(1)}k`} axisLine={false} tickLine={false} />
+            <XAxis type="number" tick={{ fontSize: 10, fill: T.ink }} tickFormatter={(v: number) => `₹${(v/1000).toFixed(1)}k`} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="category" tick={{ fontSize: 11, fill: T.ink }} width={110} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.ink }} formatter={(v: number) => [`$${v.toFixed(2)}`]} />
+            <Tooltip
+              contentStyle={{ background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: '8px', color: T.ink }}
+              itemStyle={{ color: '#ffffff' }}
+              labelStyle={{ color: '#ffffff' }}
+              formatter={(v: number) => [`₹${v.toFixed(2)}`]}
+            />
             <Bar dataKey="total" radius={[0, 6, 6, 0]}>
               {data.top_categories.map((_, i) => <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />)}
             </Bar>
@@ -449,8 +458,8 @@ function ManagerDashboard({ isAdmin }: { isAdmin: boolean }) {
                 <td style={s.td}>{tx.user_name}</td>
                 <td style={s.td}>{tx.merchant}</td>
                 <td style={s.td}><span style={s.catTag}>{tx.category}</span></td>
-                <td style={{ ...s.td, fontWeight: 700, color: tx.type === 'credit' ? T.green : T.ink }}>
-                  {tx.type === 'credit' ? '+' : '-'}${tx.amount.toFixed(2)}
+                <td style={{ ...s.td, fontWeight: 700, color: tx.type === 'credit' ? T.green : '#ffffff' }}>
+                  {tx.type === 'credit' ? '+' : '-'}₹{tx.amount.toFixed(2)}
                 </td>
               </tr>
             ))}

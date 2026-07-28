@@ -148,7 +148,7 @@ async def transfer(
                     "code": "STEP_UP_REQUIRED",
                     "step_up_reason": "HIGH_VALUE_TRANSFER",
                     "message": (
-                        f"Transfers above ${settings.transfer_stepup_threshold:,.2f} "
+                        f"Transfers above ₹{settings.transfer_stepup_threshold:,.2f} "
                         "require a fresh MFA verification."
                     ),
                 },
@@ -209,7 +209,7 @@ async def transfer(
 
     return TransferResponse(
         success=True,
-        message=f"Transferred ${req.amount:.2f} successfully",
+        message=f"Transferred ₹{req.amount:.2f} successfully",
         from_balance=from_acct.balance,
         to_balance=to_acct.balance,
     )

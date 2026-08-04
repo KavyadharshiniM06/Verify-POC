@@ -54,6 +54,12 @@ type MutatingAction =
 const PENDING_KEY = 'mb_pending_admin_action'
 const PAGE_SIZE = 10
 const ROLES = ['Customer', 'Manager', 'Admin']
+// Frontend-only display labels — backend role values are unchanged
+const ROLE_DISPLAY: Record<string, string> = {
+  Manager:  'Credit Analyst',
+  Admin:    'Administrator',
+  Customer: 'Customer',
+}
 const FACTOR_LABELS: Record<string, string> = {
   fido2: 'Passkey',
   totp: 'TOTP',
@@ -278,7 +284,7 @@ export default function AdminPage() {
               <label style={s.label}>Role</label>
               <select style={s.select} value={createForm.role}
                 onChange={e => setCreateForm(f => ({ ...f, role: e.target.value }))}>
-                {ROLES.map(r => <option key={r}>{r}</option>)}
+                {ROLES.map(r => <option key={r} value={r}>{ROLE_DISPLAY[r] ?? r}</option>)}
               </select>
             </div>
             <button
@@ -342,7 +348,7 @@ export default function AdminPage() {
                     </td>
                     <td style={s.td}><span style={s.emailText}>{u.email}</span></td>
                     <td style={s.td}>
-                      <span style={{ ...s.badge, ...roleBadgeStyle(u.role) }}>{u.role}</span>
+                      <span style={{ ...s.badge, ...roleBadgeStyle(u.role) }}>{ROLE_DISPLAY[u.role] ?? u.role}</span>
                     </td>
                     <td style={s.td}>
                       <span style={{
@@ -401,7 +407,7 @@ export default function AdminPage() {
                     <td style={s.td}>
                       <select style={s.inlineSelect} value={editForm.role}
                         onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}>
-                        {ROLES.map(r => <option key={r}>{r}</option>)}
+                        {ROLES.map(r => <option key={r} value={r}>{ROLE_DISPLAY[r] ?? r}</option>)}
                       </select>
                     </td>
                     <td style={s.td}>

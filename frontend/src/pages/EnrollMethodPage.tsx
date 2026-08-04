@@ -11,7 +11,7 @@
  * logged in, so we never ask for a User ID manually.
  */
 import React, { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { registerPasskey } from '../auth/fido2'
 import { QRCodeSVG } from 'qrcode.react'
@@ -85,12 +85,31 @@ const METHODS: Array<{
 
 // ── Component ──────────────────────────────────────────────────────────────
 
+/** Decode the `sub` claim from the session JWT without verifying the signature. */
+function getSubFromToken(): string | null {
+  try {
+    const token = sessionStorage.getItem('mb_token')
+    if (!token) return null
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return (payload.sub as string) ?? null
+  } catch {
+    return null
+  }
+}
+
 export default function EnrollMethodPage() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
-  // Resolved from /users/me on mount — avoids asking the user for their ID
-  const [verifyUserId, setVerifyUserId] = useState<string | null>(null)
+  // When arriving from /signup, we know this is a brand-new user
+  const fromSignup = searchParams.get('from') === 'signup'
+  // Pre-select a method if passed via query param (e.g. ?method=passkey)
+  const methodParam = searchParams.get('method') as MethodKey | null
+
+  // Seed verifyUserId immediately from the JWT so it is available before
+  // the /users/me response arrives — prevents "Session not ready" on fast clicks.
+  const [verifyUserId, setVerifyUserId] = useState<string | null>(() => getSubFromToken())
   const [userEmail, setUserEmail] = useState<string>(user?.email ?? '')
   const [userName, setUserName] = useState<string>(user?.name ?? '')
 
@@ -115,17 +134,27 @@ export default function EnrollMethodPage() {
   const pushPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // ── Fetch verify_user_id from /users/me ────────────────────────────────
+  // ── Enrich from /users/me (fills email/name; confirms userId) ──────────
   useEffect(() => {
     api.get<MeResponse>('/users/me').then(({ data }) => {
       setVerifyUserId(data.id)
       setUserEmail(data.email)
       setUserName(data.name)
     }).catch(() => {
-      // If /users/me fails, fall back to AuthContext values
-      // The user is still logged in; enrollment will proceed once selected
+      // JWT sub is already set — non-fatal if /users/me is slow
     })
   }, [])
+
+  // ── Pre-select method from query param ────────────────────────────────
+  useEffect(() => {
+    const VALID: MethodKey[] = ['passkey', 'totp', 'push', 'email_otp']
+    if (methodParam && VALID.includes(methodParam) && step === 'pick') {
+      setSelected(methodParam)
+      setStep('setup')
+    }
+  // Only run once on mount — intentionally not reactive to step changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [methodParam])
 
   // Cleanup push poll timers on unmount
   useEffect(() => () => stopPush(), [])
@@ -138,6 +167,7 @@ export default function EnrollMethodPage() {
   }
 
   function handleSkip() {
+    // From signup, skipping means "I'll do this later" — go to dashboard
     navigate('/dashboard', { replace: true })
   }
 
@@ -190,12 +220,19 @@ export default function EnrollMethodPage() {
     if (!verifyUserId) { setError('Session not ready — please wait a moment.'); return }
     setLoading(true); setError(null)
     try {
-      const { data } = await api.post('/auth/totp/enroll', { verify_user_id: verifyUserId })
+      // IBM Verify factor enrollment requires the user's own access token.
+      // It is stored in sessionStorage after OIDC login.
+      const ibmToken = sessionStorage.getItem('mb_ibm_access_token') ?? undefined
+      const { data } = await api.post('/auth/totp/enroll', {
+        verify_user_id: verifyUserId,
+        ibm_access_token: ibmToken,
+      })
       setTotpTxId(data.transaction_id)
       setTotpUri(data.otp_uri ?? '')
       setTotpSecret(data.secret ?? '')
-    } catch {
-      setError('Failed to generate QR code. Please try again.')
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail ?? 'Failed to generate QR code. Please try again.')
     } finally { setLoading(false) }
   }
 
@@ -204,12 +241,14 @@ export default function EnrollMethodPage() {
     if (!verifyUserId) { setError('Session not ready.'); return }
     setLoading(true); setError(null)
     try {
+      const ibmToken = sessionStorage.getItem('mb_ibm_access_token') ?? undefined
       const { data } = await api.post('/auth/totp/enroll/confirm', {
         verify_user_id: verifyUserId,
         transaction_id: totpTxId,
         otp_code: totpCode,
         email: userEmail,
         name: userName,
+        ibm_access_token: ibmToken,
       })
       finishEnrollment(data.token, data.user)
     } catch {
@@ -256,9 +295,11 @@ export default function EnrollMethodPage() {
     if (!verifyUserId) { setError('Session not ready.'); return }
     setLoading(true); setError(null)
     try {
+      const ibmToken = sessionStorage.getItem('mb_ibm_access_token') ?? undefined
       const { data } = await api.post('/auth/email-otp/send', {
         verify_user_id: verifyUserId,
         email: userEmail,
+        ibm_access_token: ibmToken,
       })
       setEmailTxId(data.transaction_id)
       setEmailStep('verify')
@@ -272,12 +313,14 @@ export default function EnrollMethodPage() {
     if (!verifyUserId) { setError('Session not ready.'); return }
     setLoading(true); setError(null)
     try {
+      const ibmToken = sessionStorage.getItem('mb_ibm_access_token') ?? undefined
       const { data } = await api.post('/auth/email-otp/verify', {
         verify_user_id: verifyUserId,
         transaction_id: emailTxId,
         otp_code: emailCode,
         email: userEmail,
         name: userName,
+        ibm_access_token: ibmToken,
       })
       finishEnrollment(data.token, data.user)
     } catch {
@@ -295,10 +338,13 @@ export default function EnrollMethodPage() {
         {step === 'pick' && (
           <>
             <div style={s.logoRow}>🏦</div>
-            <h1 style={s.title}>Set up your login method</h1>
+            <h1 style={s.title}>
+              {fromSignup ? 'Secure your new account' : 'Set up your login method'}
+            </h1>
             <p style={s.sub}>
-              Choose how you want to sign in next time. You can add more methods
-              later from your profile.
+              {fromSignup
+                ? 'Your MockBank account is live. Add a second factor via IBM Verify to protect it — step-up authentication is required for transfers over $500.'
+                : 'Choose how you want to sign in next time. You can add more methods later from your profile.'}
             </p>
 
             <div style={s.methodList}>
@@ -320,7 +366,9 @@ export default function EnrollMethodPage() {
             </div>
 
             <button style={s.skipBtn} onClick={handleSkip}>
-              Skip for now — I'll set this up from my profile
+              {fromSignup
+                ? 'Skip for now — I\'ll set up MFA later in Settings'
+                : 'Skip for now — I\'ll set this up from my profile'}
             </button>
           </>
         )}
@@ -486,11 +534,12 @@ export default function EnrollMethodPage() {
               <div style={s.doneCheck}>✓</div>
               <h2 style={s.doneTitle}>{method.name} is set up!</h2>
               <p style={s.sub}>
-                You can now sign in using {method.name}. Add more authentication
-                methods any time from your profile settings.
+                {fromSignup
+                  ? `${method.name} is registered with IBM Verify. Your account is now fully secured. You can add more factors any time from Settings.`
+                  : `You can now sign in using ${method.name}. Add more authentication methods any time from your profile settings.`}
               </p>
               <button style={s.primaryBtn} onClick={() => navigate('/dashboard', { replace: true })}>
-                Go to dashboard →
+                {fromSignup ? 'Go to my dashboard →' : 'Go to dashboard →'}
               </button>
             </div>
           )

@@ -54,7 +54,17 @@ export default function OIDCCallbackPage() {
           sessionStorage.setItem('mb_ibm_access_token', data.ibm_access_token)
         }
         login(data.token, data.user, false, null)
-        navigate('/dashboard', { replace: true })
+        // Role-based landing pages:
+        //   Admin             → CIAM portal (source of truth)
+        //   SalesforceManager → Salesforce launchpad
+        //   Manager           → Loan approvals
+        if (data.user.role === 'Admin') {
+          navigate('/admin/users', { replace: true })
+        } else if (data.user.role === 'SalesforceManager') {
+          navigate('/access-dashboard', { replace: true })
+        } else {
+          navigate('/loans', { replace: true })
+        }
       } catch (err: unknown) {
         const apiErr = err as ApiError
         const status = apiErr?.response?.status
@@ -66,7 +76,7 @@ export default function OIDCCallbackPage() {
         if (status === 403 && code === 'CONSENT_REQUIRED') {
           // Navigate to login carrying the specific consent message in location state
           // so LoginPage can render it without losing page context.
-          navigate('/', { replace: true, state: { consentError: msg ?? 'You have withdrawn consent for MockBank to access your profile. Please sign in again and click Allow to continue.' } })
+          navigate('/admin', { replace: true, state: { consentError: msg ?? 'You have withdrawn consent for MockBank to access your profile. Please sign in again and click Allow to continue.' } })
           return
         }
         setError('IBM Verify login failed. Please try again.')
@@ -82,7 +92,7 @@ export default function OIDCCallbackPage() {
         <div style={s.card}>
           <h2 style={{ color: '#dc2626', margin: '0 0 0.5rem' }}>Login Error</h2>
           <p style={s.sub}>{error}</p>
-          <button style={s.btn} onClick={() => navigate('/')}>← Back to Login</button>
+          <button style={s.btn} onClick={() => navigate('/admin')}>← Back to Login</button>
         </div>
       </div>
     )

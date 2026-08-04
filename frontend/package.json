@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3000",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "dev":            "vite --host 0.0.0.0 --port 3000",
+    "dev:admin":      "vite --config vite.config.admin.ts --mode admin",
+    "dev:analyst":    "vite --config vite.config.analyst.ts --mode analyst",
+    "build":          "tsc && vite build",
+    "build:admin":    "tsc && vite build --config vite.config.admin.ts --mode admin",
+    "build:analyst":  "tsc && vite build --config vite.config.analyst.ts --mode analyst",
+    "preview":        "vite preview"
   },
   "dependencies": {
     "react": "^18.3.1",

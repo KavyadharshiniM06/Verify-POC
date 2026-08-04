@@ -1,9 +1,12 @@
+/**
+ * SecurityCenterPage — light-themed Security Center for the Analyst portal.
+ * Uses LT (light) tokens. Shown only to Manager / SalesforceManager roles at /security.
+ */
 import React, { useEffect, useState } from 'react'
-import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
-import { T } from '../styles/theme'
+import { LT as T } from '../styles/theme'
 
-// ─── Shared types ─────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface Alert { level: 'high' | 'medium' | 'low'; title: string; detail: string }
 interface SignIn { date: string; device: string; location: string; method: string; status: 'success' | 'failed' }
 
@@ -11,8 +14,7 @@ const LEVEL_COLOR: Record<Alert['level'], string> = {
   high: T.red, medium: T.amber, low: T.blue,
 }
 
-// ─── Shared sub-components ────────────────────────────────────────────────────
-
+// ─── Score ring ───────────────────────────────────────────────────────────────
 function ScoreRing({ score }: { score: number }) {
   const color = score >= 70 ? T.green : score >= 45 ? T.amber : T.red
   return (
@@ -33,6 +35,7 @@ function ScoreRing({ score }: { score: number }) {
   )
 }
 
+// ─── Alerts card ──────────────────────────────────────────────────────────────
 function AlertsCard({ alerts }: { alerts: Alert[] }) {
   return (
     <div style={{ ...s.card, flex: 1 }}>
@@ -55,13 +58,35 @@ function AlertsCard({ alerts }: { alerts: Alert[] }) {
   )
 }
 
-function SignInsTable({ rows }: { rows: SignIn[] }) {
+// ─── Sign-ins table ───────────────────────────────────────────────────────────
+function SignInsTable({ rows, loading }: { rows: SignIn[]; loading?: boolean }) {
+  if (loading) {
+    return (
+      <div style={s.card}>
+        <div style={s.cardTitle}>Recent Sign-Ins</div>
+        <div style={{ fontSize: '0.85rem', color: T.inkSub, padding: '1rem 0' }}>Loading sign-in history…</div>
+      </div>
+    )
+  }
+  if (rows.length === 0) {
+    return (
+      <div style={s.card}>
+        <div style={s.cardTitleRow}>
+          <div style={s.cardTitle}>Recent Sign-Ins</div>
+        </div>
+        <div style={{ fontSize: '0.85rem', color: T.inkSub, padding: '1rem 0' }}>No recent authentication events found.</div>
+      </div>
+    )
+  }
   return (
     <div style={s.card}>
-      <div style={s.cardTitle}>Recent Sign-Ins</div>
+      <div style={s.cardTitleRow}>
+        <div style={s.cardTitle}>Recent Sign-Ins</div>
+        <span style={{ fontSize: '0.73rem', color: T.inkSub }}>Live</span>
+      </div>
       <table style={s.table}>
         <thead><tr>
-          {['Date & Time','Device','Location','Method','Status'].map(h => (
+          {['Date & Time', 'IP / Actor', 'Method', 'Action', 'Status'].map(h => (
             <th key={h} style={s.th}>{h}</th>
           ))}
         </tr></thead>
@@ -70,10 +95,11 @@ function SignInsTable({ rows }: { rows: SignIn[] }) {
             <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
               <td style={s.td}>{r.date}</td>
               <td style={s.td}>{r.device}</td>
-              <td style={s.td}>{r.location}</td>
               <td style={s.td}>{r.method}</td>
+              <td style={{ ...s.td, color: T.inkSub, fontSize: '0.79rem' }}>{r.location}</td>
               <td style={s.td}>
-                <span style={{ ...s.statusBadge,
+                <span style={{
+                  fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '999px',
                   background: r.status === 'success' ? T.greenLight : T.redLight,
                   color:      r.status === 'success' ? T.green : T.red,
                   border:     `1px solid ${r.status === 'success' ? T.greenBorder : T.redBorder}`,
@@ -89,629 +115,148 @@ function SignInsTable({ rows }: { rows: SignIn[] }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  CUSTOMER VIEW
-// ─────────────────────────────────────────────────────────────────────────────
-function CustomerSecurityView() {
-  const methods = [
-    { name: 'Passkey (FIDO2)',   enrolled: true,  desc: 'Biometric / hardware key — strongest protection' },
-    { name: 'Email OTP',         enrolled: true,  desc: 'One-time code delivered to your registered email' },
-    { name: 'Authenticator App', enrolled: false, desc: 'Time-based one-time password via authenticator app' },
-    { name: 'Push Notification', enrolled: false, desc: 'Approve sign-ins from your mobile device' },
-  ]
-  const devices = [
-    { name: 'MacBook Pro 16"', browser: 'Chrome 124', last: 'Active now',  trusted: true  },
-    { name: 'iPhone 15 Pro',   browser: 'Safari 17',  last: '2 days ago',  trusted: true  },
-    { name: 'Windows Laptop',  browser: 'Edge 123',   last: '14 days ago', trusted: false },
-  ]
-  const signins: SignIn[] = [
-    { date: 'Today, 09:14',      device: 'Chrome / macOS', location: 'Chennai, IN',   method: 'Passkey',   status: 'success' },
-    { date: 'Yesterday, 18:02',  device: 'Safari / iOS',   location: 'Chennai, IN',   method: 'Passkey',   status: 'success' },
-    { date: '3 days ago, 11:30', device: 'Edge / Windows', location: 'Bangalore, IN', method: 'Email OTP', status: 'success' },
-    { date: '5 days ago, 07:55', device: 'Chrome / macOS', location: 'Chennai, IN',   method: 'Password',  status: 'failed'  },
-  ]
-  const alerts: Alert[] = [
-    { level: 'medium', title: 'Authenticator app not enrolled', detail: 'Enroll a TOTP app for an offline MFA backup.' },
-    { level: 'low',    title: 'No trusted device registered',   detail: 'Register a trusted device to simplify future sign-ins.' },
-  ]
-  const enrolled = methods.filter(m => m.enrolled).length
-  const score    = Math.round((enrolled / methods.length) * 100 - 8)
-
-  return (
-    <>
-      <div style={s.pageHeader}>
-        <div>
-          <h1 style={s.pageTitle}>Security Center</h1>
-          <p style={s.pageSub}>Monitor your personal account security and manage how you sign in.</p>
-        </div>
-        <span style={{ ...s.rolePill, ...s.pillCustomer }}>Customer</span>
-      </div>
-
-      <div style={s.topRow}>
-        <ScoreRing score={score} />
-        <AlertsCard alerts={alerts} />
-      </div>
-
-      <div style={s.card}>
-        <div style={s.cardTitle}>Your Authentication Methods</div>
-        <div style={s.methodsGrid}>
-          {methods.map((m, i) => (
-            <div key={i} style={{ ...s.methodCard, borderColor: m.enrolled ? T.greenBorder : T.border }}>
-              <div style={s.methodTop}>
-                <span style={{ ...s.enrolledBadge, ...(m.enrolled ? s.enrolledOn : s.enrolledOff) }}>
-                  {m.enrolled ? '✓ Enrolled' : 'Not Enrolled'}
-                </span>
-              </div>
-              <div style={s.methodName}>{m.name}</div>
-              <div style={s.methodDesc}>{m.desc}</div>
-              {!m.enrolled && (
-                <button style={s.enrollBtn}>Enroll</button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={s.card}>
-        <div style={s.cardTitle}>My Trusted Devices</div>
-        <div style={s.deviceList}>
-          {devices.map((d, i) => (
-            <div key={i} style={s.deviceRow}>
-              <span style={{ fontSize: '1.5rem' }}>
-                {d.browser.includes('iOS') || d.browser.includes('Safari') ? '📱' : '💻'}
-              </span>
-              <div style={{ flex: 1 }}>
-                <div style={s.deviceName}>{d.name}</div>
-                <div style={s.deviceMeta}>{d.browser} · Last seen: {d.last}</div>
-              </div>
-              {d.trusted
-                ? <span style={s.trustedBadge}>Trusted</span>
-                : <span style={s.untrustedBadge}>Untrusted</span>
-              }
-              {!d.trusted && (
-                <button style={s.revokeBtn}>Revoke</button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <SignInsTable rows={signins} />
-    </>
-  )
+// ─── Interfaces ───────────────────────────────────────────────────────────────
+interface IbvEvent {
+  time: string; action: string; actor: string
+  target: string; outcome: string; ip: string
+}
+interface MeFactors {
+  fido2: boolean | unknown[]; totp: boolean | unknown[]
+  push: boolean | unknown[]; email_otp: boolean | unknown[]; sso: boolean
+  [key: string]: boolean | unknown[]
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  MANAGER VIEW
-// ─────────────────────────────────────────────────────────────────────────────
-function ManagerSecurityView() {
+// ─── Main export ──────────────────────────────────────────────────────────────
+export default function SecurityCenterPage() {
+  const [activity,   setActivity]   = useState<IbvEvent[]>([])
+  const [actLoading, setActLoading] = useState(true)
+  const [factors,    setFactors]    = useState<MeFactors | null>(null)
+
+  useEffect(() => {
+    api.get<{ events: IbvEvent[] }>('/users/me/activity', { params: { limit: 10 } })
+      .then(r => setActivity(r.data.events ?? []))
+      .catch(() => setActivity([]))
+      .finally(() => setActLoading(false))
+    api.get<{ enrolled_factors: MeFactors }>('/users/me')
+      .then(r => setFactors(r.data.enrolled_factors))
+      .catch(() => {})
+  }, [])
+
+  const hasMfa = factors ? !!(factors.totp || factors.push || factors.fido2 || factors.email_otp) : null
+  const myScore = hasMfa == null ? 0 : (hasMfa ? 85 : 55)
+
   const myAlerts: Alert[] = [
-    { level: 'low', title: 'Push notification not enrolled', detail: 'Enroll push for faster approvals from your mobile device.' },
-  ]
-  const myScore = 78
-  const signins: SignIn[] = [
-    { date: 'Today, 08:31',      device: 'Chrome / macOS', location: 'Chennai, IN',   method: 'Passkey',   status: 'success' },
-    { date: 'Yesterday, 17:44',  device: 'Safari / iOS',   location: 'Chennai, IN',   method: 'Passkey',   status: 'success' },
-    { date: '2 days ago, 10:12', device: 'Chrome / macOS', location: 'Chennai, IN',   method: 'Email OTP', status: 'success' },
-  ]
-
-  const teamStats = [
-    { label: 'Users with MFA',          value: 38, total: 42, color: T.green },
-    { label: 'Users without MFA',        value: 4,  total: 42, color: T.red },
-    { label: 'Suspended accounts',       value: 2,  total: 42, color: T.amber },
-    { label: 'Failed logins (24h)',       value: 7,  total: null, color: '#7c5cd8' },
-    { label: 'High-risk users',          value: 3,  total: null, color: T.red },
-    { label: 'New joiners (7d)',          value: 6,  total: null, color: T.blue },
+    ...(hasMfa === false ? [{ level: 'high' as const,
+      title: 'No MFA factor enrolled',
+      detail: 'Enroll a second factor in Settings → Identity to protect your account.' }] : []),
+    ...(hasMfa === true  ? [{ level: 'low' as const,
+      title: 'MFA is active on your account',
+      detail: 'Your account is protected by a second factor.' }] : []),
   ]
 
-  const riskUsers = [
-    { name: 'Liam Bagchi',  email: 'liam@mockbank.com',  risk: 47, issue: 'No MFA enrolled',         last: '7h ago' },
-    { name: 'Rohit Reyes',  email: 'rohit@mockbank.com', risk: 54, issue: 'Multiple failed logins',   last: '8h ago' },
-    { name: 'Wei Silva',    email: 'wei@mockbank.com',   risk: 19, issue: 'Untrusted device sign-in', last: '3h ago' },
+  function ibvToSignIn(ev: IbvEvent): SignIn {
+    const ac = (ev.action || '').toLowerCase()
+    const oc = (ev.outcome || '').toLowerCase()
+    const succeeded = !oc || oc.includes('success') || oc.includes('allow')
+    const method =
+      ac.includes('fido') ? 'Passkey' : ac.includes('totp') ? 'TOTP' :
+      ac.includes('push') ? 'Push'    : ac.includes('email') ? 'Email OTP' :
+      ac.includes('password') ? 'Password' : 'SSO'
+    const dateStr = ev.time
+      ? new Date(ev.time).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : '—'
+    return { date: dateStr, device: ev.ip || '—', location: ev.action || '—', method, status: succeeded ? 'success' : 'failed' }
+  }
+
+  const FACTOR_TILES = [
+    { label: 'Passkey / FIDO2',      key: 'fido2',     color: '#a78bfa' },
+    { label: 'Authenticator (TOTP)', key: 'totp',      color: T.blue   },
+    { label: 'Push Notification',    key: 'push',      color: T.amber  },
+    { label: 'Email OTP',            key: 'email_otp', color: T.green  },
+    { label: 'SSO (OIDC)',           key: 'sso',       color: T.green  },
   ]
 
   return (
-    <>
+    <div style={{ fontFamily: T.fontFamily }}>
+      {/* Page header */}
       <div style={s.pageHeader}>
         <div>
           <h1 style={s.pageTitle}>Security Center</h1>
-          <p style={s.pageSub}>Your personal security posture plus a team-level overview for the accounts you oversee.</p>
+          <p style={s.pageSub}>Your personal security posture. Sign-in history and enrolled factor status.</p>
         </div>
-        <span style={{ ...s.rolePill, ...s.pillManager }}>Manager</span>
+        <span style={{ ...s.rolePill, background: '#ede9fe', color: '#7c3aed', border: '1px solid #c4b5fd' }}>
+          Credit Analyst
+        </span>
       </div>
 
+      {/* Score + Alerts */}
       <div style={s.topRow}>
         <ScoreRing score={myScore} />
         <AlertsCard alerts={myAlerts} />
       </div>
 
+      {/* Enrolled factors */}
       <div style={s.card}>
-        <div style={s.cardTitle}>Team Security Overview</div>
+        <div style={s.cardTitle}>Your Enrolled Factors</div>
         <div style={s.statsGrid}>
-          {teamStats.map(stat => (
-            <div key={stat.label} style={s.statTile}>
-              <div style={{ ...s.statVal, color: stat.color }}>{stat.value}</div>
-              {stat.total !== null && (
-                <div style={{ height: '4px', background: T.borderLight, borderRadius: '99px', margin: '0.35rem 0' }}>
-                  <div style={{ height: '100%', width: `${Math.round((stat.value / stat.total) * 100)}%`, background: stat.color, borderRadius: '99px' }} />
-                </div>
-              )}
-              <div style={s.statLbl}>{stat.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={s.card}>
-        <div style={s.cardTitleRow}>
-          <div style={s.cardTitle}>At-Risk Users</div>
-          <span style={{ fontSize: '0.75rem', color: T.inkSub }}>Requires action</span>
-        </div>
-        <table style={s.table}>
-          <thead><tr>
-            {['User','Risk Score','Issue','Last Login','Action'].map(h => (
-              <th key={h} style={s.th}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {riskUsers.map((u, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
-                <td style={s.td}>
-                  <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.name}</div>
-                  <div style={{ fontSize: '0.74rem', color: T.inkSub }}>{u.email}</div>
-                </td>
-                <td style={s.td}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ width: '60px', height: '5px', background: T.bgMuted, borderRadius: '99px', overflow: 'hidden' }}>
-                      <div style={{ width: `${u.risk}%`, height: '100%', background: u.risk > 45 ? T.red : T.amber, borderRadius: '99px' }} />
-                    </div>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: T.inkSub }}>{u.risk}</span>
-                  </div>
-                </td>
-                <td style={{ ...s.td, fontSize: '0.82rem', color: T.red }}>{u.issue}</td>
-                <td style={{ ...s.td, fontSize: '0.8rem', color: T.inkSub }}>{u.last}</td>
-                <td style={s.td}>
-                  <button style={s.actionBtn}>Review</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <SignInsTable rows={signins} />
-    </>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  ADMIN VIEW
-// ─────────────────────────────────────────────────────────────────────────────
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-interface AuditEntry {
-  action: string
-  actor_name: string
-  target_email: string
-  details: string
-  created_at: string
-}
-
-interface DirectoryUser {
-  id: string
-  is_active: boolean
-  created_at: string | null
-  mfa_enrolled: boolean | null
-}
-
-const ACTION_LABEL: Record<string, string> = {
-  joiner:           'User onboarded',
-  mover:            'Role / profile changed',
-  leaver_disable:   'Access suspended',
-  leaver_reinstate: 'Access reinstated',
-  leaver_delete:    'Identity deleted',
-}
-
-const ACTION_SEVERITY: Record<string, string> = {
-  joiner:           'info',
-  mover:            'warning',
-  leaver_disable:   'warning',
-  leaver_reinstate: 'info',
-  leaver_delete:    'high',
-}
-
-const SEVER_COLOR: Record<string, string> = {
-  info: T.blue, warning: T.amber, medium: T.amber, high: T.red,
-}
-
-function formatRelativeTime(iso: string): string {
-  try {
-    const diff = Date.now() - new Date(iso).getTime()
-    const mins  = Math.floor(diff / 60_000)
-    const hours = Math.floor(diff / 3_600_000)
-    const days  = Math.floor(diff / 86_400_000)
-    if (mins  <  2) return 'Just now'
-    if (mins  < 60) return `${mins}m ago`
-    if (hours < 24) return `${hours}h ago`
-    if (days  <  2) return 'Yesterday'
-    return `${days} days ago`
-  } catch {
-    return '—'
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  ADMIN VIEW
-// ─────────────────────────────────────────────────────────────────────────────
-function AdminSecurityView() {
-  const [auditLog,   setAuditLog]   = useState<AuditEntry[]>([])
-  const [auditLoading, setAuditLoading] = useState(true)
-  const [dirUsers,   setDirUsers]   = useState<DirectoryUser[]>([])
-  const [dirLoading, setDirLoading] = useState(true)
-
-  // Fetch real JML audit log
-  useEffect(() => {
-    api.get<AuditEntry[]>('/users/audit/recent', { params: { limit: 50 } })
-      .then(r => setAuditLog(r.data))
-      .catch(() => setAuditLog([]))
-      .finally(() => setAuditLoading(false))
-  }, [])
-
-  // Fetch directory for real counts — reuses the existing /users endpoint
-  useEffect(() => {
-    api.get<{ users: DirectoryUser[]; total: number }>('/users', { params: { page_size: 200 } })
-      .then(r => setDirUsers(r.data.users))
-      .catch(() => setDirUsers([]))
-      .finally(() => setDirLoading(false))
-  }, [])
-
-  const loading = auditLoading || dirLoading
-
-  // Derive real counts from directory (all from IBM Verify SCIM — no audit events needed)
-  const totalIdentities = dirUsers.length
-  const activeCount     = dirUsers.filter(u => u.is_active).length
-  const suspendedCount  = dirUsers.filter(u => !u.is_active).length
-  const mfaEnrolled     = dirUsers.filter(u => u.mfa_enrolled === true).length
-  const mfaNotEnrolled  = dirUsers.filter(u => u.mfa_enrolled === false).length
-  const now = Date.now()
-  const joined7d = dirUsers.filter(u => {
-    try { return u.created_at && now - new Date(u.created_at).getTime() < 7 * 86_400_000 }
-    catch { return false }
-  }).length
-
-  const suspendEvents = auditLog.filter(e => e.action === 'leaver_disable').length
-
-  // Score: penalise for suspended accounts and users without MFA
-  const orgScore = loading ? 0 : Math.max(
-    40,
-    Math.round(
-      100
-      - (suspendedCount  / Math.max(totalIdentities, 1)) * 25
-      - (mfaNotEnrolled  / Math.max(totalIdentities, 1)) * 30
-      - suspendEvents * 2
-    )
-  )
-
-  const orgStats = [
-    { label: 'Total Identities',    value: loading ? '…' : totalIdentities,                          color: T.inkSub },
-    { label: 'Active',              value: loading ? '…' : activeCount,                               color: T.green  },
-    { label: 'Suspended',           value: loading ? '…' : suspendedCount,                            color: T.red    },
-    { label: 'New Joiners (7d)',    value: loading ? '…' : joined7d,                                  color: T.green  },
-    { label: 'MFA Enrolled',        value: loading ? '…' : mfaEnrolled,                               color: T.blue   },
-    { label: 'MFA Not Enrolled',    value: loading ? '…' : mfaNotEnrolled,                            color: T.amber  },
-    { label: 'Failed Logins (24h)', value: '—',                                                        color: T.amber  },
-    { label: 'High-Risk Users',     value: '—',                                                        color: T.red    },
-  ]
-
-  const orgAlerts: Alert[] = [
-    ...(mfaNotEnrolled > 0 ? [{
-      level: 'high' as const,
-      title: `${mfaNotEnrolled} user${mfaNotEnrolled > 1 ? 's have' : ' has'} no MFA enrolled`,
-      detail: 'Enforce MFA policy or suspend access for these accounts.',
-    }] : []),
-    ...(suspendedCount > 0 ? [{
-      level: 'medium' as const,
-      title: `${suspendedCount} account${suspendedCount > 1 ? 's' : ''} currently suspended`,
-      detail: 'Review suspended identities and confirm offboarding is complete.',
-    }] : []),
-  ]
-
-  const SEVER_COLOR_LOCAL: Record<string, string> = SEVER_COLOR
-
-  const SECURITY_POLICIES = [
-    {
-      icon: '🔐',
-      title: 'Multi-Factor Authentication (MFA)',
-      description: 'All user accounts are required to enrol at least one second factor before completing sign-in. Supported methods include TOTP authenticator apps, push notifications, and hardware security keys.',
-      status: 'Enforced',
-      statusColor: T.green,
-      standard: 'NIST SP 800-63B',
-    },
-    {
-      icon: '⏱',
-      title: 'Session Inactivity Timeout',
-      description: 'Active sessions are automatically invalidated after 30 minutes of inactivity. Re-authentication is required to resume access, limiting exposure from unattended workstations.',
-      status: 'Active',
-      statusColor: T.green,
-      standard: 'ISO/IEC 27001 A.9.4',
-    },
-    {
-      icon: '🛡',
-      title: 'Adaptive Risk Engine',
-      description: 'Every sign-in is scored in real time using device fingerprint, geolocation, velocity, and behaviour signals. Sign-ins exceeding the risk threshold are blocked or routed to step-up authentication.',
-      status: 'Active',
-      statusColor: T.green,
-      standard: 'OWASP ASVS 2.2',
-    },
-    {
-      icon: '💸',
-      title: 'Step-Up MFA for High-Value Transfers',
-      description: 'Transactions above $100 trigger a mandatory second-factor challenge regardless of existing session state, providing an additional control layer against account-takeover fraud.',
-      status: 'Enforced',
-      statusColor: T.green,
-      standard: 'PSD2 SCA / PCI DSS 8.3',
-    },
-    {
-      icon: '🔑',
-      title: 'Password Complexity & Rotation',
-      description: 'Passwords must be a minimum of 12 characters, include mixed case, digits, and symbols. Passwords that appear in known breach corpuses (HIBP) are rejected at the point of creation.',
-      status: 'Enforced',
-      statusColor: T.green,
-      standard: 'NIST SP 800-63B §5.1',
-    },
-    {
-      icon: '📋',
-      title: 'Privileged Access Management (PAM)',
-      description: 'Admin and Manager roles are subject to just-in-time access provisioning. All privileged actions require step-up authentication and are immutably recorded in the security audit log.',
-      status: 'Enforced',
-      statusColor: T.green,
-      standard: 'CIS Control 5',
-    },
-  ]
-
-  return (
-    <>
-      <div style={s.pageHeader}>
-        <div>
-          <h1 style={s.pageTitle}>Security Center</h1>
-          <p style={s.pageSub}>Organisation-wide security posture, policy controls, threat intelligence and the full security audit log.</p>
-        </div>
-        <span style={{ ...s.rolePill, ...s.pillAdmin }}>Admin</span>
-      </div>
-
-      <div style={s.orgStatsRow}>
-        <div style={s.orgStatsLegend}>
-          {orgStats.map((stat, i) => (
-            <React.Fragment key={stat.label}>
-              {i > 0 && <span style={s.orgLegendDivider} />}
-              <div style={s.orgLegendItem}>
-                <span style={{ ...s.orgLegendDot, background: stat.color }} />
-                <span style={s.orgLegendLabel}>{stat.label}</span>
-                <span style={{ ...s.orgLegendValue, color: stat.color }}>{stat.value}</span>
-              </div>
-            </React.Fragment>
-          ))}
-        </div>
-        {loading && (
-          <div style={{ fontSize: '0.72rem', color: T.inkSub, marginTop: '0.4rem', paddingLeft: '0.5rem' }}>
-            Loading live data…
-          </div>
-        )}
-      </div>
-
-      <div style={s.topRow}>
-        <ScoreRing score={orgScore} />
-        <AlertsCard alerts={orgAlerts} />
-      </div>
-
-      <div style={s.card}>
-        <div style={s.cardTitle}>Security Policies</div>
-        <div style={{ fontSize: '0.8rem', color: T.inkSub, marginBottom: '1.25rem' }}>
-          The following policies are centrally enforced by the platform. They apply to all users and cannot be overridden at the individual account level.
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-          {SECURITY_POLICIES.map(policy => (
-            <div key={policy.title} style={{
-              background: T.bgMuted, border: `1px solid ${T.border}`,
-              borderRadius: '10px', padding: '1rem 1.1rem',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '1rem' }}>{policy.icon}</span>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: T.ink }}>{policy.title}</div>
-                </div>
+          {FACTOR_TILES.map(ft => {
+            const enrolled = factors ? !!(factors as Record<string, unknown>)[ft.key] : null
+            return (
+              <div key={ft.label} style={s.statTile}>
                 <span style={{
-                  fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.55rem',
-                  borderRadius: '999px', background: policy.statusColor + '18',
-                  color: policy.statusColor, border: `1px solid ${policy.statusColor}33`,
-                  flexShrink: 0, marginLeft: '0.5rem',
-                }}>{policy.status}</span>
+                  display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                  fontSize: '0.7rem', fontWeight: 700, padding: '0.18rem 0.5rem',
+                  borderRadius: '999px', marginBottom: '0.4rem',
+                  background: enrolled ? ft.color + '18' : T.bgMuted,
+                  color: enrolled ? ft.color : T.inkSub,
+                  border: `1px solid ${enrolled ? ft.color + '44' : T.border}`,
+                }}>
+                  <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: enrolled ? ft.color : T.inkLight }} />
+                  {enrolled == null ? '—' : enrolled ? 'Enrolled' : 'Not enrolled'}
+                </span>
+                <div style={s.statLbl}>{ft.label}</div>
               </div>
-              <div style={{ fontSize: '0.78rem', color: T.inkSub, lineHeight: 1.55, marginBottom: '0.6rem' }}>
-                {policy.description}
-              </div>
-              <div style={{ fontSize: '0.68rem', color: T.inkLight, fontWeight: 600, letterSpacing: '0.03em' }}>
-                Standard: {policy.standard}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
-      <div style={s.card}>
-        <div style={s.cardTitle}>Identity Provider Status</div>
-        <div style={s.idpGrid}>
-          {[
-            { label: 'SSO (OIDC)',        status: 'Active',    color: T.green },
-            { label: 'SCIM Provisioning', status: 'Active',    color: T.green },
-            { label: 'MFA Enforcement',   status: 'Enforced',  color: T.green },
-            { label: 'Risk Engine',       status: 'Active',    color: T.green },
-          ].map(item => (
-            <div key={item.label} style={s.idpCard}>
-              <div style={{ ...s.idpDot, background: item.color }} />
-              <div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: T.ink }}>{item.label}</div>
-                <div style={{ fontSize: '0.75rem', color: item.color, fontWeight: 700, marginTop: '0.1rem' }}>{item.status}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={s.card}>
-        <div style={s.cardTitleRow}>
-          <div style={s.cardTitle}>Security Audit Log</div>
-          <span style={{ fontSize: '0.75rem', color: T.inkSub }}>Identity lifecycle events · live from local DB</span>
-        </div>
-        {auditLoading ? (
-          <div style={{ fontSize: '0.85rem', color: T.inkSub, padding: '1rem 0' }}>Loading audit log…</div>
-        ) : auditLog.length === 0 ? (
-          <div style={{ fontSize: '0.85rem', color: T.inkSub, padding: '1rem 0' }}>No lifecycle events recorded yet.</div>
-        ) : (
-          <table style={s.table}>
-            <thead><tr>
-              {['Time','Actor','Action','Target','Severity'].map(h => (
-                <th key={h} style={s.th}>{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {auditLog.map((row, i) => {
-                const severity = ACTION_SEVERITY[row.action] ?? 'info'
-                const sevColor = SEVER_COLOR_LOCAL[severity] ?? T.blue
-                return (
-                  <tr key={i} style={{ background: i % 2 === 0 ? T.bgCard : T.bgMuted }}>
-                    <td style={{ ...s.td, color: T.inkSub, fontSize: '0.79rem' }}>
-                      {formatRelativeTime(row.created_at)}
-                    </td>
-                    <td style={{ ...s.td, fontSize: '0.83rem' }}>{row.actor_name}</td>
-                    <td style={{ ...s.td, fontSize: '0.83rem', fontWeight: 500 }}>
-                      {ACTION_LABEL[row.action] ?? row.action}
-                      {row.details ? <span style={{ fontWeight: 400, color: T.inkSub }}> — {row.details}</span> : null}
-                    </td>
-                    <td style={{ ...s.td, fontSize: '0.8rem', color: T.inkSub }}>{row.target_email}</td>
-                    <td style={s.td}>
-                      <span style={{ ...s.badge,
-                        color: sevColor,
-                        background: sevColor + '18',
-                        border: `1px solid ${sevColor}33`,
-                      }}>
-                        {severity}
-                      </span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </>
-  )
-}
-
-// ─── Router ───────────────────────────────────────────────────────────────────
-export default function SecurityCenterPage() {
-  const { user } = useAuth()
-  return (
-    <div style={s.root}>
-      {user?.role === 'Admin'   && <AdminSecurityView />}
-      {user?.role === 'Manager' && <ManagerSecurityView />}
-      {(!user?.role || user.role === 'Customer') && <CustomerSecurityView />}
+      {/* Sign-in history */}
+      <SignInsTable rows={activity.map(ibvToSignIn)} loading={actLoading} />
     </div>
   )
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
-  root:       { fontFamily: T.fontFamily },
-  pageHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' },
-  pageTitle:  { fontSize: '1.5rem', fontWeight: 800, color: T.ink, margin: 0, letterSpacing: '-0.02em' },
-  pageSub:    { fontSize: '0.82rem', color: T.inkSub, marginTop: '0.25rem', maxWidth: '560px' },
+  pageHeader:  { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' },
+  pageTitle:   { fontSize: '1.5rem', fontWeight: 800, color: T.ink, margin: 0, letterSpacing: '-0.02em' },
+  pageSub:     { fontSize: '0.82rem', color: T.inkSub, marginTop: '0.25rem', maxWidth: '560px' },
+  rolePill:    { fontSize: '0.72rem', fontWeight: 700, padding: '0.3rem 0.9rem', borderRadius: '999px', border: '1px solid', flexShrink: 0, marginTop: '0.2rem' },
+  topRow:      { display: 'flex', gap: '1.25rem', marginBottom: '1.25rem', alignItems: 'flex-start' },
 
-  // Role pill
-  rolePill:     { fontSize: '0.72rem', fontWeight: 700, padding: '0.3rem 0.9rem', borderRadius: '999px', border: '1px solid', flexShrink: 0, marginTop: '0.2rem' },
-  pillCustomer: { background: T.blueLight, color: T.blue, borderColor: T.blue + '44' },
-  pillManager:  { background: '#3b1fa833', color: '#a78bfa', borderColor: '#7c3aed44' },
-  pillAdmin:    { background: T.amberLight, color: T.amber, borderColor: T.amberBorder },
-
-  topRow:  { display: 'flex', gap: '1.25rem', marginBottom: '1.25rem', alignItems: 'flex-start' },
-
-  // Score ring
   scoreCard:   { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '1.5rem', textAlign: 'center', minWidth: '170px', boxShadow: T.shadowCard },
   scoreLabel:  { fontSize: '0.65rem', fontWeight: 700, color: T.inkSub, textTransform: 'uppercase' as const, letterSpacing: '0.09em', marginBottom: '1rem' },
   scoreRing:   { position: 'relative' as const, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
   scoreNum:    { position: 'absolute' as const, fontSize: '1.25rem', fontWeight: 800, color: T.ink },
   scoreStatus: { marginTop: '0.75rem', fontWeight: 700, fontSize: '0.9rem', color: T.ink },
 
-  // Shared card
   card:        { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusCard, padding: '1.25rem 1.5rem', marginBottom: '1.25rem', boxShadow: T.shadowCard },
   cardTitle:   { fontSize: '0.9rem', fontWeight: 700, color: T.ink, marginBottom: '1rem', letterSpacing: '-0.01em' },
   cardTitleRow:{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' },
   empty:       { fontSize: '0.85rem', color: T.inkSub, padding: '0.5rem 0' },
 
-  // Alerts
   alertRow:    { display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.75rem 0', borderBottom: `1px solid ${T.borderLight}` },
   alertDot:    { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, marginTop: '5px' },
   alertTitle:  { fontSize: '0.87rem', fontWeight: 600, color: T.ink },
   alertDetail: { fontSize: '0.78rem', color: T.inkSub, marginTop: '0.15rem' },
   badge:       { fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '999px', textTransform: 'capitalize' as const, flexShrink: 0, marginTop: '2px' },
 
-  // Auth methods (Customer)
-  methodsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: '1rem' },
-  methodCard:  { border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', background: T.bgCard },
-  methodTop:   { display: 'flex', justifyContent: 'flex-end' },
-  enrolledBadge:{ fontSize: '0.7rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '999px' },
-  enrolledOn:  { background: T.greenLight, color: T.green },
-  enrolledOff: { background: T.bgMuted, color: T.inkSub },
-  methodName:  { fontSize: '0.88rem', fontWeight: 700, color: T.ink },
-  methodDesc:  { fontSize: '0.75rem', color: T.inkSub, lineHeight: 1.4, flex: 1 },
-  enrollBtn:   { marginTop: '0.5rem', padding: '0.4rem 0.85rem', background: T.amber, color: '#0d1117', border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, alignSelf: 'flex-start' as const },
-
-  // Devices
-  deviceList:     { display: 'flex', flexDirection: 'column', gap: '0.65rem' },
-  deviceRow:      { display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: T.bgMuted, borderRadius: '10px', border: `1px solid ${T.border}` },
-  deviceName:     { fontSize: '0.87rem', fontWeight: 600, color: T.ink },
-  deviceMeta:     { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.1rem' },
-  trustedBadge:   { fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}`, borderRadius: '999px' },
-  untrustedBadge: { fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', background: T.redLight, color: T.red, border: `1px solid ${T.redBorder}`, borderRadius: '999px' },
-  revokeBtn:      { padding: '0.3rem 0.7rem', background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 },
-
-  // Manager — team stats
   statsGrid:   { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '0.9rem' },
   statTile:    { background: T.bgMuted, border: `1px solid ${T.border}`, borderRadius: T.radiusInner, padding: '0.85rem' },
-  statVal:     { fontSize: '1.6rem', fontWeight: 800, lineHeight: 1 },
   statLbl:     { fontSize: '0.75rem', color: T.inkSub, marginTop: '0.4rem', fontWeight: 500 },
-  actionBtn:   { padding: '0.3rem 0.75rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.77rem', fontWeight: 600, color: T.ink },
 
-  // Admin — org stats legend strip
-  orgStatsRow:      { marginBottom: '1.25rem' },
-  orgStatsLegend:   {
-    display: 'flex', alignItems: 'center', flexWrap: 'wrap' as const,
-    background: T.bgCard, border: `1px solid ${T.border}`,
-    borderRadius: T.radiusInner, padding: '0.7rem 1.25rem',
-    boxShadow: T.shadowCard, gap: 0,
-  },
-  orgLegendItem:    { display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.3rem 0.85rem' },
-  orgLegendDot:     { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
-  orgLegendLabel:   { fontSize: '0.72rem', fontWeight: 600, color: T.inkSub, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
-  orgLegendValue:   { fontSize: '1rem', fontWeight: 700, lineHeight: 1 },
-  orgLegendDivider: { width: '1px', height: '28px', background: T.border, flexShrink: 0 },
-
-  // Admin — policy toggles
-  policyRow:  { display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.85rem 0', borderBottom: `1px solid ${T.borderLight}` },
-  track:      { width: '44px', height: '24px', borderRadius: '999px', border: 'none', cursor: 'pointer', position: 'relative' as const, padding: 0, flexShrink: 0, transition: 'background 0.2s' },
-  thumb:      { position: 'absolute' as const, top: '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'transform 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' },
-  saveBtn:    { padding: '0.5rem 1.2rem', background: T.ink, color: T.bg, border: 'none', borderRadius: T.radiusPill, cursor: 'pointer', fontWeight: 700, fontSize: '0.84rem' },
-  exportBtn:  { padding: '0.35rem 0.8rem', background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: T.radiusPill, cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, color: T.inkSub },
-
-  // Admin — IDP status grid
-  idpGrid:    { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '0.75rem' },
-  idpCard:    { display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0.85rem', background: T.bgMuted, borderRadius: T.radiusInner, border: `1px solid ${T.border}` },
-  idpDot:     { width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0 },
-
-  // Shared table
-  table:      { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.83rem' },
-  th:         { textAlign: 'left' as const, padding: '0.6rem 0.75rem', color: T.inkSub, fontSize: '0.68rem', fontWeight: 700, borderBottom: `1px solid ${T.border}`, textTransform: 'uppercase' as const, letterSpacing: '0.07em' },
-  td:         { padding: '0.7rem 0.75rem', color: T.ink, borderBottom: `1px solid ${T.borderLight}` },
-  statusBadge:{ fontSize: '0.7rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '999px' },
+  table:       { width: '100%', borderCollapse: 'collapse' as const, fontSize: '0.83rem' },
+  th:          { textAlign: 'left' as const, padding: '0.6rem 0.75rem', color: T.inkSub, fontSize: '0.68rem', fontWeight: 700, borderBottom: `1px solid ${T.border}`, textTransform: 'uppercase' as const, letterSpacing: '0.07em' },
+  td:          { padding: '0.7rem 0.75rem', color: T.ink, borderBottom: `1px solid ${T.borderLight}` },
 }

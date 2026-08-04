@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
-import { T } from '../styles/theme'
+import { LT as T } from '../styles/theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Section =
@@ -12,8 +12,6 @@ type Section =
   | 'privacy'
   | 'notifications'
   | 'preferences'
-  | 'organization'
-  | 'developers'
 
 interface Toast { msg: string; kind: 'success' | 'error' }
 
@@ -50,12 +48,12 @@ function Toggle({ label, sub, checked, onChange, disabled }: {
         {sub && <div style={{ ...f.toggleSub, opacity: disabled ? 0.45 : 1 }}>{sub}</div>}
       </div>
       <button
-            style={{ ...f.track, background: checked ? T.amber : T.borderLight, opacity: disabled ? 0.45 : 1, cursor: disabled ? 'default' : 'pointer' }}
+        style={{ ...f.track, background: checked ? T.amber : T.bgMuted, opacity: disabled ? 0.45 : 1, cursor: disabled ? 'default' : 'pointer' }}
         onClick={() => !disabled && onChange(!checked)}
         aria-pressed={checked}
         disabled={disabled}
       >
-        <span style={{ ...f.thumb, transform: checked ? 'translateX(20px)' : 'translateX(2px)' }} />
+        <span style={{ ...f.thumb, left: checked ? '23px' : '3px' }} />
       </button>
     </div>
   )
@@ -111,20 +109,18 @@ function InfoBanner({ icon, text }: { icon: string; text: string }) {
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
 const NAV_ALL: { id: Section; label: string; icon: string; roles: string[] }[] = [
-  { id: 'profile',       label: 'Profile',        icon: '👤', roles: ['Customer','Manager','Admin'] },
-  { id: 'security',      label: 'Security',        icon: '🔒', roles: ['Customer','Manager','Admin'] },
-  { id: 'identity',      label: 'Identity',        icon: '🪪', roles: ['Customer','Manager','Admin'] },
-  { id: 'privacy',       label: 'Privacy',         icon: '🛡️', roles: ['Customer','Manager','Admin'] },
-  { id: 'notifications', label: 'Notifications',   icon: '🔔', roles: ['Customer','Manager','Admin'] },
-  { id: 'preferences',   label: 'Preferences',     icon: '🎛', roles: ['Customer','Manager','Admin'] },
-  { id: 'organization',  label: 'Organization',    icon: '🏢', roles: ['Manager','Admin'] },
-  { id: 'developers',    label: 'Developers',      icon: '⚙️', roles: ['Manager','Admin'] },
+  { id: 'profile',       label: 'My Profile',        icon: '👤', roles: ['Manager','SalesforceManager','Admin'] },
+  { id: 'security',      label: 'Change Password',    icon: '🔑', roles: ['Manager','SalesforceManager','Admin'] },
+  { id: 'identity',      label: 'Auth Methods',       icon: '🪪', roles: ['Manager','SalesforceManager','Admin'] },
+  { id: 'privacy',       label: 'Privacy & Consent',  icon: '🛡️', roles: ['Manager','SalesforceManager','Admin'] },
+  { id: 'notifications', label: 'Alerts',             icon: '🔔', roles: ['Manager','SalesforceManager','Admin'] },
+  { id: 'preferences',   label: 'Appearance',         icon: '🎨', roles: ['Manager','SalesforceManager','Admin'] },
 ]
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const { user } = useAuth()
-  const role = user?.role ?? 'Customer'
+  const role = user?.role ?? 'Manager'
   const [section, setSection] = useState<Section>('profile')
   const [toast,   setToast]   = useState<Toast | null>(null)
 
@@ -146,24 +142,18 @@ export default function SettingsPage() {
 
       <div style={s.pageHeader}>
         <div>
-          <h1 style={s.pageTitle}>Settings</h1>
-          <p style={s.pageSub}>
-            {role === 'Customer'
-              ? 'Manage your account preferences, security settings and notification options.'
-              : role === 'Manager'
-              ? 'Manage your profile, security settings, organisation details and integrations.'
-              : 'Manage system-wide configuration, developer access, organisation settings and your profile.'}
-          </p>
+          <h1 style={s.pageTitle}>Account Settings</h1>
+          <p style={s.pageSub}>Manage your personal profile, authentication methods, privacy consents, and display preferences.</p>
         </div>
-        <div style={{ ...s.roleBadge, ...(role === 'Admin' ? s.roleBadgeAdmin : role === 'Manager' ? s.roleBadgeMgr : s.roleBadgeCust) }}>
-          {role}
+        <div style={{ ...s.roleBadge, ...s.roleBadgeMgr }}>
+          {role === 'Manager' ? 'Credit Analyst' : role}
         </div>
       </div>
 
       <div style={s.body}>
         <aside style={s.sidebar}>
-          <div style={s.navGroup}>ACCOUNT</div>
-          {nav.filter(n => ['profile','security','identity','privacy','notifications','preferences'].includes(n.id)).map(n => (
+          <div style={s.navGroup}>MY ACCOUNT</div>
+          {nav.map(n => (
             <button key={n.id}
               style={{ ...s.navBtn, ...(activeSection === n.id ? s.navBtnActive : {}) }}
               onClick={() => setSection(n.id)}
@@ -171,20 +161,6 @@ export default function SettingsPage() {
               <span style={s.navIcon}>{n.icon}</span>{n.label}
             </button>
           ))}
-
-          {nav.some(n => ['organization','developers'].includes(n.id)) && (
-            <>
-              <div style={{ ...s.navGroup, marginTop: '1rem' }}>WORKSPACE</div>
-              {nav.filter(n => ['organization','developers'].includes(n.id)).map(n => (
-                <button key={n.id}
-                  style={{ ...s.navBtn, ...(activeSection === n.id ? s.navBtnActive : {}) }}
-                  onClick={() => setSection(n.id)}
-                >
-                  <span style={s.navIcon}>{n.icon}</span>{n.label}
-                </button>
-              ))}
-            </>
-          )}
         </aside>
 
         <div style={s.content}>
@@ -194,8 +170,6 @@ export default function SettingsPage() {
           {activeSection === 'privacy'       && <PrivacySection       showToast={showToast} />}
           {activeSection === 'notifications' && <NotificationsSection role={role} showToast={showToast} />}
           {activeSection === 'preferences'   && <PreferencesSection   showToast={showToast} />}
-          {activeSection === 'organization'  && <OrganizationSection  role={role} showToast={showToast} />}
-          {activeSection === 'developers'    && <DevelopersSection    role={role} showToast={showToast} />}
         </div>
       </div>
     </div>
@@ -209,18 +183,31 @@ function ProfileSection({ user, role, showToast }: {
   showToast: (m: string, kind?: 'success' | 'error') => void
 }) {
   const { token, login } = useAuth()
-  const [name,     setName]     = useState(user?.name  ?? '')
-  const [email,    setEmail]    = useState(user?.email ?? '')
-  const [phone,    setPhone]    = useState('+1 (555) 012-3456')
-  const [address,  setAddress]  = useState('742 Evergreen Terrace, Springfield, IL 62701')
-  const [jobTitle, setJobTitle] = useState(role === 'Admin' ? 'IAM Administrator' : role === 'Manager' ? 'Branch Manager' : 'Account Holder')
-  const [dept,     setDept]     = useState(role === 'Admin' ? 'IT & Identity Management' : role === 'Manager' ? 'Retail Banking' : '')
-  const [saving,   setSaving]   = useState(false)
+  const [name,      setName]      = useState(user?.name  ?? '')
+  const [email,     setEmail]     = useState(user?.email ?? '')
+  const [phone,     setPhone]     = useState('')
+  const [phoneOrig, setPhoneOrig] = useState('')
+  const [address,   setAddress]   = useState('742 Evergreen Terrace, Springfield, IL 62701')
+  const [jobTitle,  setJobTitle]  = useState(role === 'Admin' ? 'IAM Administrator' : role === 'SalesforceManager' ? 'Salesforce Manager' : 'Credit Analyst')
+  const [dept,      setDept]      = useState(role === 'Admin' ? 'IT & Identity Management' : role === 'SalesforceManager' ? 'Sales' : 'Finance & Credit')
+  const [saving,    setSaving]    = useState(false)
+
+  // Fetch live phone from IBM Verify via /users/me
+  useEffect(() => {
+    api.get<{ phone?: string; name: string; email: string; role: string }>('/users/me')
+      .then(({ data }) => {
+        if (data.phone) { setPhone(data.phone); setPhoneOrig(data.phone) }
+      })
+      .catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     setSaving(true)
     try {
-      const { data } = await api.put('/users/me', { name, email })
+      const payload: { name: string; email: string; phone?: string } = { name, email }
+      if (phone !== phoneOrig) payload.phone = phone
+      const { data } = await api.put('/users/me', payload)
+      setPhoneOrig(phone)
       // Refresh in-session user so nav/header reflects new name immediately
       login(token!, { name: data.name, email: data.email, role: data.role })
       showToast('Profile updated successfully.')
@@ -238,7 +225,13 @@ function ProfileSection({ user, role, showToast }: {
           <Field label="Full name"     value={name}  onChange={setName} />
           <Field label="Email address" value={email} onChange={setEmail} type="email" />
           <Field label="Phone number"  value={phone} onChange={setPhone} type="tel" />
-          <Field label="Role"          value={user?.role ?? 'Customer'} readonly hint="Role is managed by your administrator." />
+          <Field label="Role"
+            value={
+              user?.role === 'Manager'  ? 'Credit Analyst' :
+              user?.role === 'Admin'    ? 'Administrator'  :
+              user?.role ?? ''
+            }
+            readonly hint="Role is managed by your administrator." />
         </div>
         <div style={f.actions}>
           <SaveBtn onClick={save} loading={saving} />
@@ -257,44 +250,21 @@ function ProfileSection({ user, role, showToast }: {
         </div>
       </SectionCard>
 
-      {/* Employment card — hidden for Customer */}
-      {role !== 'Customer' && (
-        <SectionCard title="Employment">
-          <div style={f.grid2}>
-            <Field label="Job title"   value={jobTitle} onChange={role === 'Admin' ? setJobTitle : undefined} readonly={role !== 'Admin'} />
-            <Field label="Department"  value={dept}     onChange={role === 'Admin' ? setDept     : undefined} readonly={role !== 'Admin'}
-              hint={role === 'Manager' ? 'Contact your admin to update employment details.' : undefined} />
-            <Field label="Employee ID" value="EMP-00412"  readonly />
-            <Field label="Start date"  value="2021-03-15" readonly />
+      {/* Employment card — all workforce roles */}
+      <SectionCard title="Employment">
+        <div style={f.grid2}>
+          <Field label="Job title"   value={jobTitle} onChange={role === 'Admin' ? setJobTitle : undefined} readonly={role !== 'Admin'} />
+          <Field label="Department"  value={dept}     onChange={role === 'Admin' ? setDept     : undefined} readonly={role !== 'Admin'}
+            hint={role !== 'Admin' ? 'Contact your administrator to update employment details.' : undefined} />
+          <Field label="Employee ID" value="EMP-00412"  readonly />
+          <Field label="Start date"  value="2021-03-15" readonly />
+        </div>
+        {role === 'Admin' && (
+          <div style={f.actions}>
+            <SaveBtn onClick={() => showToast('Employment details saved.')} />
           </div>
-          {role === 'Admin' && (
-            <div style={f.actions}>
-              <SaveBtn onClick={() => showToast('Employment details saved.')} />
-            </div>
-          )}
-        </SectionCard>
-      )}
-
-      {/* Linked accounts — Customer only */}
-      {role === 'Customer' && (
-        <SectionCard title="Linked Accounts">
-          {[
-            { label: 'MockBank Savings',  sub: 'Primary account ending ••••4821', icon: '🏦' },
-            { label: 'External Bank',     sub: 'Not linked',                       icon: '🔗' },
-          ].map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem 0', borderBottom: i === 0 ? `1px solid ${T.borderLight}` : 'none' }}>
-              <span style={{ fontSize: '1.4rem' }}>{item.icon}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.87rem', fontWeight: 600, color: T.ink }}>{item.label}</div>
-                <div style={{ fontSize: '0.75rem', color: T.inkSub }}>{item.sub}</div>
-              </div>
-              <button style={f.outlineBtn} onClick={() => showToast('Account linking is managed through the mobile app.')}>
-                {i === 0 ? 'Manage' : 'Link'}
-              </button>
-            </div>
-          ))}
-        </SectionCard>
-      )}
+        )}
+      </SectionCard>
     </div>
   )
 }
@@ -317,12 +287,15 @@ interface MeResponse { id: string; email: string; name: string; role: string; en
 type PendingIdentityAction = { type: 'delete_account' } | { type: 'unenroll'; factor: string }
 const PENDING_IDENTITY_KEY = 'mb_pending_identity_action'
 
-/** Map factor keys to human-readable labels and enroll routes. */
+/** Map factor keys to human-readable labels and enroll routes.
+ *  enrollPath method values must match MethodKey in EnrollMethodPage
+ *  (passkey | totp | push | email_otp).
+ */
 const FACTOR_META: Record<string, { label: string; icon: string; enrollPath: string; canUnenroll: boolean }> = {
-  fido2:     { label: 'Passkey (FIDO2 / Biometric)', icon: '🪪', enrollPath: '/enroll?method=fido2',     canUnenroll: true  },
+  fido2:     { label: 'Passkey (FIDO2 / Biometric)', icon: '🪪', enrollPath: '/enroll?method=passkey',   canUnenroll: true  },
   totp:      { label: 'Authenticator App (TOTP)',     icon: '🔑', enrollPath: '/enroll?method=totp',      canUnenroll: true  },
   push:      { label: 'Push Notification',            icon: '📲', enrollPath: '/enroll?method=push',      canUnenroll: true  },
-  email_otp: { label: 'Email OTP',                    icon: '📧', enrollPath: '',                         canUnenroll: false },
+  email_otp: { label: 'Email OTP',                    icon: '📧', enrollPath: '/enroll?method=email_otp', canUnenroll: false },
 }
 
 function formatDate(iso: string | null): string {
@@ -333,7 +306,7 @@ function formatDate(iso: string | null): string {
 }
 
 function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success' | 'error') => void }) {
-  const { stepupVerified, logout } = useAuth()
+  const { stepupVerified, logout, user: authUser } = useAuth()
   const navigate = useNavigate()
 
   const [factors, setFactors]             = useState<EnrolledFactors | null>(null)
@@ -345,7 +318,10 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
   const loadFactors = () => {
     setLoading(true)
     api.get<MeResponse>('/users/me')
-      .then(({ data }) => setFactors(data.enrolled_factors))
+      .then(({ data }) => {
+        console.debug('[IdentitySection] /users/me enrolled_factors:', JSON.stringify(data.enrolled_factors))
+        setFactors(data.enrolled_factors)
+      })
       .catch(() => setFactors(null))
       .finally(() => setLoading(false))
   }
@@ -420,6 +396,13 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
 
   return (
     <div>
+      {/* Cross-link to Engage tab — only for non-Customer roles (Admin/Manager) */}
+      {authUser?.role !== 'Customer' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.7rem 1rem', marginBottom: '1rem', background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.25)', borderRadius: '8px', fontSize: '0.8rem', color: T.inkSub }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.amber} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          <span>See your full authentication &amp; security status on the <a href="/ciam" style={{ color: T.amber, fontWeight: 600, textDecoration: 'none' }}>Identity Lifecycle → Engage</a> page.</span>
+        </div>
+      )}
       <SectionCard title="Authentication Methods"
         action={
           <button style={f.outlineBtn} onClick={loadFactors}>Refresh</button>
@@ -433,45 +416,41 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
           <div style={{ color: T.inkSub, fontSize: '0.83rem', padding: '0.5rem 0' }}>Loading enrollment status…</div>
         ) : (
           <>
-            {/* Only show enrolled methods */}
-            {METHODS.filter(m => m.enrolled).length === 0 ? (
-              <div style={{ padding: '0.75rem 0.9rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}`, fontSize: '0.82rem', color: T.inkSub }}>
-                No authentication methods enrolled yet.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {METHODS.filter(m => m.enrolled).map(m => {
-                  const isRemoving = removingFactor === m.key
-                  return (
-                    <div key={m.key} style={{
-                      borderRadius: '10px',
-                      border: `1px solid ${T.greenBorder}`,
-                      overflow: 'hidden',
+            {/* Enrolled factors — with device list and remove button */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {METHODS.map(m => {
+                const isRemoving = removingFactor === m.key
+                return (
+                  <div key={m.key} style={{
+                    borderRadius: '10px',
+                    border: `1px solid ${m.enrolled ? T.greenBorder : T.border}`,
+                    overflow: 'hidden',
+                  }}>
+                    {/* Factor header row */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.75rem 1rem',
+                      background: m.enrolled ? T.greenLight : T.bgMuted,
                     }}>
-                      {/* Factor header row */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '0.75rem 1rem',
-                        background: T.greenLight,
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                          <span style={{ fontSize: '1.1rem' }}>{m.icon}</span>
-                          <div>
-                            <div style={{ fontSize: '0.87rem', fontWeight: 700, color: T.ink }}>{m.label}</div>
-                            <span style={{
-                              fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.4rem',
-                              borderRadius: '999px',
-                              background: T.greenLight,
-                              color: T.green,
-                              border: `1px solid ${T.greenBorder}`,
-                            }}>
-                              {`✓ ${m.devices.length} device${m.devices.length !== 1 ? 's' : ''}`}
-                            </span>
-                          </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <span style={{ fontSize: '1.1rem' }}>{m.icon}</span>
+                        <div>
+                          <div style={{ fontSize: '0.87rem', fontWeight: 700, color: T.ink }}>{m.label}</div>
+                          <span style={{
+                            fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.4rem',
+                            borderRadius: '999px',
+                            background: m.enrolled ? T.greenLight : T.bgCard,
+                            color: m.enrolled ? T.green : T.inkSub,
+                            border: `1px solid ${m.enrolled ? T.greenBorder : T.border}`,
+                          }}>
+                            {m.enrolled ? `✓ ${m.devices.length} device${m.devices.length !== 1 ? 's' : ''}` : 'Not enrolled'}
+                          </span>
                         </div>
+                      </div>
 
-                        {/* Remove button — only for removable enrolled factors */}
-                        {m.canUnenroll && (
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        {/* Remove button — enrolled + removable */}
+                        {m.enrolled && m.canUnenroll && (
                           <button
                             style={{ padding: '0.35rem 0.85rem', background: T.redLight, border: `1px solid ${T.redBorder}`, color: T.red, borderRadius: '999px', cursor: isRemoving ? 'default' : 'pointer', fontSize: '0.78rem', fontWeight: 600, opacity: isRemoving ? 0.5 : 1 }}
                             onClick={() => !isRemoving && handleUnenroll(m.key)}
@@ -480,46 +459,50 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
                             {isRemoving ? 'Removing…' : 'Remove'}
                           </button>
                         )}
+                        {/* Email OTP — always on, no remove */}
+                        {m.enrolled && !m.canUnenroll && (
+                          <span style={{ fontSize: '0.72rem', color: T.inkSub, fontStyle: 'italic' }}>Always active</span>
+                        )}
                       </div>
-
-                      {/* Device list */}
-                      {m.devices.length > 0 && (
-                        <div style={{ borderTop: `1px solid ${T.border}` }}>
-                          {m.devices.map((dev, idx) => (
-                            <div key={dev.id} style={{
-                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              padding: '0.55rem 1rem',
-                              background: idx % 2 === 0 ? T.bgCard : T.bgMuted,
-                              borderBottom: idx < m.devices.length - 1 ? `1px solid ${T.borderLight}` : 'none',
-                            }}>
-                              <div>
-                                <div style={{ fontSize: '0.83rem', color: T.ink, fontWeight: 600 }}>{dev.name || 'Device'}</div>
-                                {dev.created_at && (
-                                  <div style={{ fontSize: '0.7rem', color: T.inkSub, marginTop: '0.1rem' }}>
-                                    Registered {formatDate(dev.created_at)}
-                                  </div>
-                                )}
-                              </div>
-                              <span style={{ fontSize: '0.68rem', padding: '0.15rem 0.5rem', borderRadius: '999px', background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}`, fontWeight: 700 }}>
-                                Active
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
-                  )
-                })}
-              </div>
-            )}
 
-            {/* Add additional method — triggers confirmation modal before redirecting */}
+                    {/* Device list — only for enrolled factors with devices */}
+                    {m.enrolled && m.devices.length > 0 && (
+                      <div style={{ borderTop: `1px solid ${T.border}` }}>
+                        {m.devices.map((dev, idx) => (
+                          <div key={dev.id} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '0.55rem 1rem',
+                            background: idx % 2 === 0 ? T.bgCard : T.bgMuted,
+                            borderBottom: idx < m.devices.length - 1 ? `1px solid ${T.borderLight}` : 'none',
+                          }}>
+                            <div>
+                              <div style={{ fontSize: '0.83rem', color: T.ink, fontWeight: 600 }}>{dev.name || 'Device'}</div>
+                              {dev.created_at && (
+                                <div style={{ fontSize: '0.7rem', color: T.inkSub, marginTop: '0.1rem' }}>
+                                  Registered {formatDate(dev.created_at)}
+                                </div>
+                              )}
+                            </div>
+                            <span style={{ fontSize: '0.68rem', padding: '0.15rem 0.5rem', borderRadius: '999px', background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}`, fontWeight: 700 }}>
+                              Active
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Single "Add authentication method" button at the bottom */}
             <div style={{ marginTop: '1.1rem', paddingTop: '0.9rem', borderTop: `1px solid ${T.borderLight}` }}>
               <button
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
                   padding: '0.5rem 1.1rem',
-                  background: T.amber, color: '#0d1117',
+                  background: '#1d4ed8', color: '#ffffff',
                   borderRadius: '999px', border: 'none',
                   fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer',
                 }}
@@ -531,7 +514,7 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
                 Add authentication method
               </button>
               <div style={{ fontSize: '0.72rem', color: T.inkSub, marginTop: '0.45rem' }}>
-                Opens IBM Verify to add a passkey, authenticator app, or push notification.
+                Enrol a passkey, authenticator app, push notification, or email OTP to secure your account.
               </div>
             </div>
 
@@ -603,7 +586,7 @@ function IdentitySection({ showToast }: { showToast: (m: string, kind?: 'success
                       style={{
                         flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
                         padding: '0.6rem 0',
-                        background: T.amber, color: '#0d1117',
+                        background: T.amber, color: '#ffffff',
                         borderRadius: '999px', textDecoration: 'none',
                         fontSize: '0.85rem', fontWeight: 700,
                       }}
@@ -1240,37 +1223,25 @@ function SecuritySection({ role, showToast }: { role: string; showToast: (m: str
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 function NotificationsSection({ role, showToast }: { role: string; showToast: (m: string, kind?: 'success' | 'error') => void }) {
-  const [emailTx,     setEmailTx]     = useState(true)
-  const [emailSec,    setEmailSec]    = useState(true)
-  const [emailMkt,    setEmailMkt]    = useState(false)
-  const [emailDigest, setEmailDigest] = useState(true)
-  const [pushTx,      setPushTx]      = useState(true)
-  const [pushSec,     setPushSec]     = useState(true)
-  const [smsAuth,     setSmsAuth]     = useState(false)
-  const [smsAlerts,   setSmsAlerts]   = useState(false)
-  // Manager/Admin extras
-  const [teamDigest,   setTeamDigest]   = useState(role !== 'Customer')
-  // Admin-only
+  const [emailSec,     setEmailSec]     = useState(true)
+  const [emailDigest,  setEmailDigest]  = useState(true)
+  const [teamDigest,   setTeamDigest]   = useState(true)
   const [systemAlerts, setSystemAlerts] = useState(true)
   const [auditReports, setAuditReports] = useState(true)
+  const [pushSec,      setPushSec]      = useState(true)
+  const [smsAuth,      setSmsAuth]      = useState(true)
 
   return (
     <div>
       <SectionCard title="Email Notifications">
-        <Toggle label="Transaction alerts"     sub="Notify me about debits, credits and transfers."       checked={emailTx}     onChange={setEmailTx} />
-        <Toggle label="Security alerts"        sub="Sign-in attempts, password changes and MFA events."   checked={emailSec}    onChange={setEmailSec} />
-        {role === 'Customer' && (
-          <Toggle label="Marketing &amp; offers" sub="Promotional offers and product announcements."       checked={emailMkt}    onChange={setEmailMkt} />
-        )}
-        <Toggle label="Weekly digest"          sub="A summary of your account activity every Monday."     checked={emailDigest} onChange={setEmailDigest} />
-        {role !== 'Customer' && (
-          <Toggle
-            label={role === 'Admin' ? 'Team &amp; admin digest' : 'Team digest'}
-            sub={role === 'Admin' ? 'Weekly summary of user activity, lifecycle events and security posture.' : 'Weekly summary of your team\'s transactions and activity.'}
-            checked={teamDigest}
-            onChange={v => { setTeamDigest(v); showToast(v ? 'Team digest enabled.' : 'Team digest disabled.') }}
-          />
-        )}
+        <Toggle label="Security alerts"   sub="Sign-in attempts, password changes and MFA events."   checked={emailSec}    onChange={setEmailSec} />
+        <Toggle label="Weekly digest"     sub="A weekly summary of workforce activity and identity events." checked={emailDigest} onChange={setEmailDigest} />
+        <Toggle
+          label={role === 'Admin' ? 'Admin &amp; audit digest' : 'Team digest'}
+          sub={role === 'Admin' ? 'Weekly summary of user lifecycle events, logins and security posture.' : 'Weekly summary of your team\'s access activity.'}
+          checked={teamDigest}
+          onChange={v => { setTeamDigest(v); showToast(v ? 'Team digest enabled.' : 'Team digest disabled.') }}
+        />
         {role === 'Admin' && (
           <>
             <Toggle
@@ -1293,12 +1264,11 @@ function NotificationsSection({ role, showToast }: { role: string; showToast: (m
       </SectionCard>
 
       <SectionCard title="Push Notifications">
-        <Toggle label="Transaction activity" sub="Real-time push for every payment and transfer."  checked={pushTx}  onChange={setPushTx} />
-        <Toggle label="Security events"      sub="Immediate push when a new device signs in."      checked={pushSec} onChange={setPushSec} />
+        <Toggle label="Security events"   sub="Immediate push when a new device signs in or MFA changes." checked={pushSec} onChange={setPushSec} />
         {role === 'Admin' && (
           <Toggle
             label="Identity lifecycle events"
-            sub="Push when a user is created, suspended, or has their role changed."
+            sub="Push when a user is onboarded, suspended, or has their role changed."
             checked={true}
             onChange={() => showToast('Preference saved.')}
           />
@@ -1309,13 +1279,8 @@ function NotificationsSection({ role, showToast }: { role: string; showToast: (m
       </SectionCard>
 
       <SectionCard title="SMS">
-        <Toggle label="OTP &amp; authentication codes" sub="Receive one-time codes for login and transfers." checked={smsAuth}   onChange={setSmsAuth} />
-        {role === 'Customer' && (
-          <Toggle label="Balance alerts" sub="Get a text when your balance drops below $500." checked={smsAlerts} onChange={setSmsAlerts} />
-        )}
-        {role !== 'Customer' && (
-          <Toggle label="Security incident SMS" sub="Immediate SMS on critical security events (account lockout, breach alert)." checked={true} onChange={() => showToast('Preference saved.')} />
-        )}
+        <Toggle label="OTP &amp; authentication codes" sub="Receive one-time codes for login and sensitive actions." checked={smsAuth} onChange={setSmsAuth} />
+        <Toggle label="Security incident SMS" sub="Immediate SMS on critical security events (account lockout, breach alert)." checked={true} onChange={() => showToast('Preference saved.')} />
         <div style={f.actions}>
           <SaveBtn onClick={() => showToast('SMS preferences saved.')} />
         </div>
@@ -1329,7 +1294,7 @@ function PreferencesSection({ showToast }: { showToast: (m: string) => void }) {
   const [language,      setLanguage]      = useState('English (US)')
   const [timezone,      setTimezone]      = useState('Asia/Kolkata (IST, UTC+5:30)')
   const [dateFormat,    setDateFormat]    = useState('MM/DD/YYYY')
-  const [currency,      setCurrency]      = useState('USD — US Dollar')
+  const [currency,      setCurrency]      = useState('INR — Indian Rupee')
   const [theme,         setTheme]         = useState<'system' | 'light' | 'dark'>('system')
   const [compactMode,   setCompactMode]   = useState(false)
   const [accessibility, setAccessibility] = useState(false)
@@ -1350,7 +1315,7 @@ function PreferencesSection({ showToast }: { showToast: (m: string) => void }) {
       <SectionCard title="Currency">
         <Select label="Display currency" value={currency} options={['USD — US Dollar', 'INR — Indian Rupee', 'EUR — Euro', 'GBP — British Pound', 'JPY — Japanese Yen']} onChange={setCurrency} />
         <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: T.inkSub }}>
-          Currency affects how balances and transaction amounts are displayed throughout the app.
+          Currency affects how amounts are displayed in loan and operations views.
         </div>
         <div style={f.actions}>
           <SaveBtn onClick={() => showToast('Currency preference saved.')} />
@@ -1381,265 +1346,6 @@ function PreferencesSection({ showToast }: { showToast: (m: string) => void }) {
     </div>
   )
 }
-
-// ─── Organization ─────────────────────────────────────────────────────────────
-function OrganizationSection({ role, showToast }: { role: string; showToast: (m: string) => void }) {
-  const isAdmin = role === 'Admin'
-  const [orgName,      setOrgName]      = useState('MockBank Financial Services')
-  const [domain,       setDomain]       = useState('mockbank.internal')
-  const [billingEmail, setBillingEmail] = useState('billing@mockbank.internal')
-  const [ssoEnabled,   setSsoEnabled]   = useState(true)
-  const [scimEnabled,  setScimEnabled]  = useState(true)
-
-  const members = [
-    { name: 'Alice Johnson',  email: 'alice@mockbank.internal',  role: 'Admin',    status: 'Active'   },
-    { name: 'Bob Smith',      email: 'bob@mockbank.internal',    role: 'Manager',  status: 'Active'   },
-    { name: 'Carol Williams', email: 'carol@mockbank.internal',  role: 'Customer', status: 'Active'   },
-    { name: 'David Lee',      email: 'david@mockbank.internal',  role: 'Customer', status: 'Inactive' },
-  ]
-
-  return (
-    <div>
-      {!isAdmin && (
-        <InfoBanner icon="ℹ️" text="Organisation details are managed by your administrator. Contact your admin to request changes." />
-      )}
-
-      <SectionCard title="Organisation Details">
-        <div style={f.grid2}>
-          <Field label="Organisation name" value={orgName}      onChange={isAdmin ? setOrgName      : undefined} readonly={!isAdmin} />
-          <Field label="Primary domain"    value={domain}       onChange={isAdmin ? setDomain       : undefined} readonly={!isAdmin} />
-          <Field label="Billing email"     value={billingEmail} onChange={isAdmin ? setBillingEmail : undefined} readonly={!isAdmin} type="email" />
-          <Field label="Plan"              value="Enterprise" readonly hint="Contact support to change your plan." />
-        </div>
-        {isAdmin && (
-          <div style={f.actions}>
-            <SaveBtn onClick={() => showToast('Organisation details saved.')} />
-          </div>
-        )}
-      </SectionCard>
-
-      <SectionCard title="Members"
-        action={isAdmin ? (
-          <button style={f.saveBtn} onClick={() => showToast('Invite sent — check the admin console.')}>
-            + Invite member
-          </button>
-        ) : undefined}
-      >
-        {!isAdmin && <div style={{ fontSize: '0.78rem', color: T.inkSub, marginBottom: '0.75rem' }}>Showing active members visible to your role.</div>}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {members.filter(m => isAdmin || m.status === 'Active').map((m, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', padding: '0.75rem', background: T.bgMuted, borderRadius: '8px' }}>
-            <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: T.amber, color: '#0d1117', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.9rem', flexShrink: 0 }}>
-                {m.name.charAt(0)}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.87rem', fontWeight: 600, color: T.ink }}>{m.name}</div>
-                <div style={{ fontSize: '0.75rem', color: T.inkSub }}>{m.email}</div>
-              </div>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '999px',
-                background: m.status === 'Active' ? T.greenLight : T.bgMuted,
-                color:      m.status === 'Active' ? T.green : T.inkSub,
-                border:     m.status === 'Active' ? `1px solid ${T.greenBorder}` : `1px solid ${T.border}`,
-              }}>{m.status}</span>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '999px', background: T.blueLight, color: T.blue, border: `1px solid ${T.blue}44` }}>
-                {m.role}
-              </span>
-              {isAdmin && (
-                <button style={{ ...f.outlineBtn, fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                  onClick={() => showToast(`Manage ${m.name} — redirecting to Identity Lifecycle.`)}>
-                  Manage
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      {/* SSO / SCIM — Admin only */}
-      {isAdmin && (
-        <SectionCard title="SSO / SAML &amp; SCIM">
-          <Toggle
-            label="Single Sign-On (SSO)"
-            sub="Members authenticate via IBM Verify (SAML 2.0 / OIDC)."
-            checked={ssoEnabled}
-            onChange={v => { setSsoEnabled(v); showToast(v ? 'SSO enabled.' : 'SSO disabled.') }}
-          />
-          <Toggle
-            label="SCIM Provisioning"
-            sub="Automatically sync users and groups from your identity provider."
-            checked={scimEnabled}
-            onChange={v => { setScimEnabled(v); showToast(v ? 'SCIM enabled.' : 'SCIM disabled.') }}
-          />
-          <div style={{ marginTop: '0.9rem', padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: T.inkSub, marginBottom: '0.4rem' }}>SCIM Base URL</div>
-            <code style={{ fontSize: '0.78rem', color: T.ink, wordBreak: 'break-all' as const }}>
-              https://kavyad.verify.ibm.com/v2.0/scim
-            </code>
-          </div>
-          <div style={f.actions}>
-            <SaveBtn onClick={() => showToast('SSO / SCIM settings saved.')} />
-          </div>
-        </SectionCard>
-      )}
-
-      {/* Manager — read-only SSO status */}
-      {!isAdmin && (
-        <SectionCard title="Identity Provider Status">
-          {[
-            { label: 'Single Sign-On (OIDC)', status: 'Active' },
-            { label: 'SCIM Provisioning',     status: 'Active' },
-            { label: 'MFA Enforcement',        status: 'Enabled' },
-          ].map(item => (
-            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0', borderBottom: `1px solid ${T.borderLight}` }}>
-              <span style={{ fontSize: '0.87rem', color: T.ink, fontWeight: 500 }}>{item.label}</span>
-              <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.6rem', borderRadius: '999px', background: T.greenLight, color: T.green, border: `1px solid ${T.greenBorder}` }}>
-                {item.status}
-              </span>
-            </div>
-          ))}
-        </SectionCard>
-      )}
-    </div>
-  )
-}
-
-// ─── Developers ───────────────────────────────────────────────────────────────
-function DevelopersSection({ role, showToast }: { role: string; showToast: (m: string) => void }) {
-  const isAdmin = role === 'Admin'
-  const [keys, setKeys] = useState([
-    { name: 'Production API Key', key: 'mb_live_••••••••••••••••••••3f8a', created: '2024-01-12', last: '2 minutes ago', active: true  },
-    { name: 'Development Key',    key: 'mb_test_••••••••••••••••••••9b1c', created: '2024-03-05', last: '5 days ago',    active: true  },
-    { name: 'Legacy Key (v1)',    key: 'mb_live_••••••••••••••••••••2d4e', created: '2023-07-20', last: '90+ days ago',  active: false },
-  ])
-  const [webhookUrl,    setWebhookUrl]    = useState('https://api.mockbank.internal/hooks/verify')
-  const [webhookActive, setWebhookActive] = useState(true)
-
-  const revokeKey = (name: string) => {
-    setKeys(prev => prev.map(k => k.name === name ? { ...k, active: false } : k))
-    showToast(`Key "${name}" revoked.`)
-  }
-
-  return (
-    <div>
-      {!isAdmin && (
-        <InfoBanner icon="ℹ️" text="API key management is restricted to administrators. Contact your admin to request a new key or revoke an existing one." />
-      )}
-
-      <SectionCard title="API Keys"
-        action={isAdmin ? (
-          <button style={f.saveBtn} onClick={() => showToast('New API key generated — save it securely, it will not be shown again.')}>
-            + Generate new key
-          </button>
-        ) : undefined}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-          {keys.map((k, i) => (
-            <div key={i} style={{ padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                <div style={{ fontWeight: 700, fontSize: '0.87rem', color: T.ink, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  {k.name}
-                  <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.1rem 0.45rem', borderRadius: '999px',
-                    background: k.active ? T.greenLight : T.bgMuted,
-                    color:      k.active ? T.green : T.inkSub,
-                  }}>{k.active ? 'Active' : 'Revoked'}</span>
-                </div>
-                {isAdmin && k.active && (
-                  <button style={{ ...f.dangerBtn, fontSize: '0.75rem', padding: '0.25rem 0.65rem' }}
-                    onClick={() => revokeKey(k.name)}>
-                    Revoke
-                  </button>
-                )}
-              </div>
-              <code style={{ fontSize: '0.78rem', color: T.inkSub, display: 'block', marginBottom: '0.3rem' }}>{k.key}</code>
-              <div style={{ fontSize: '0.73rem', color: T.inkLight }}>
-                Created {k.created} · Last used {k.last}
-              </div>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      <SectionCard title="Webhooks">
-        <Field
-          label="Endpoint URL"
-          value={webhookUrl}
-          onChange={isAdmin ? setWebhookUrl : undefined}
-          readonly={!isAdmin}
-          hint={isAdmin ? "MockBank will POST signed event payloads to this URL." : "Webhook endpoint is managed by your administrator."}
-        />
-        <Toggle
-          label="Webhook active"
-          sub="Disable to pause event delivery without removing the configuration."
-          checked={webhookActive}
-          onChange={isAdmin ? v => { setWebhookActive(v); showToast(v ? 'Webhook enabled.' : 'Webhook paused.') } : () => {}}
-          disabled={!isAdmin}
-        />
-        <div style={{ marginTop: '0.9rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap' as const }}>
-          {['transaction.created', 'transfer.completed', 'user.created', 'user.suspended', 'mfa.enrolled'].map(ev => (
-            <span key={ev} style={{ fontSize: '0.72rem', padding: '0.2rem 0.6rem', background: T.blueLight, color: T.blue, border: `1px solid ${T.blue}44`, borderRadius: '999px', fontWeight: 600 }}>
-              {ev}
-            </span>
-          ))}
-        </div>
-        {isAdmin && (
-          <div style={f.actions}>
-            <SaveBtn onClick={() => showToast('Webhook configuration saved.')} />
-            <button style={f.outlineBtn} onClick={() => showToast('Test event delivered — check your endpoint logs.')}>
-              Send test event
-            </button>
-          </div>
-        )}
-      </SectionCard>
-
-      {/* Rate limits — Admin only */}
-      {isAdmin && (
-        <SectionCard title="Rate Limits">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {[
-              { label: 'Read operations',  limit: '1,000 / min', used: 342, total: 1000 },
-              { label: 'Write operations', limit: '200 / min',   used: 47,  total: 200  },
-              { label: 'Auth requests',    limit: '50 / min',    used: 12,  total: 50   },
-            ].map(r => (
-              <div key={r.label} style={{ padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: T.ink }}>{r.label}</span>
-                  <span style={{ fontSize: '0.78rem', color: T.inkSub }}>{r.used} / {r.limit}</span>
-                </div>
-                <div style={{ height: '6px', background: T.border, borderRadius: '99px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(r.used / r.total) * 100}%`, background: r.used / r.total > 0.8 ? T.red : T.ink, borderRadius: '99px' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      )}
-
-      {/* Manager — API usage summary (read-only) */}
-      {!isAdmin && (
-        <SectionCard title="API Usage (This Month)">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            {[
-              { label: 'Read operations',  used: 342,  total: 1000, limit: '1,000 / min' },
-              { label: 'Write operations', used: 47,   total: 200,  limit: '200 / min'   },
-            ].map(r => (
-              <div key={r.label} style={{ padding: '0.85rem 1rem', background: T.bgMuted, borderRadius: '8px', border: `1px solid ${T.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: T.ink }}>{r.label}</span>
-                  <span style={{ fontSize: '0.78rem', color: T.inkSub }}>{r.used} / {r.limit}</span>
-                </div>
-                <div style={{ height: '6px', background: T.border, borderRadius: '99px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(r.used / r.total) * 100}%`, background: T.ink, borderRadius: '99px' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      )}
-    </div>
-  )
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
   root:       { fontFamily: T.fontFamily, position: 'relative' },
   pageHeader: { marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
@@ -1717,7 +1423,7 @@ const f: Record<string, React.CSSProperties> = {
     paddingTop: '1rem', borderTop: `1px solid ${T.borderLight}`,
   },
   saveBtn: {
-    padding: '0.5rem 1.1rem', background: T.amber, color: '#0d1117',
+    padding: '0.5rem 1.1rem', background: T.amber, color: '#ffffff',
     border: 'none', borderRadius: T.radiusPill, cursor: 'pointer',
     fontSize: '0.84rem', fontWeight: 700,
   },
@@ -1745,12 +1451,13 @@ const f: Record<string, React.CSSProperties> = {
   track: {
     width: '44px', height: '24px', borderRadius: '999px', border: 'none',
     position: 'relative' as const, cursor: 'pointer', transition: 'background 0.2s',
-    flexShrink: 0, padding: 0,
+    flexShrink: 0, padding: 0, overflow: 'hidden',
   },
   thumb: {
     position: 'absolute' as const, top: '3px',
     width: '18px', height: '18px', borderRadius: '50%',
-    background: '#fff', transition: 'transform 0.2s',
+    background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+    transition: 'left 0.18s ease',
     display: 'block',
   },
 }

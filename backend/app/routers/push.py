@@ -29,6 +29,26 @@ from app.services.verify_client import verify_client
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/push", tags=["push"])
 
+import time as _time
+
+# Maps transaction_id → (authenticator_id, expires_at) so poll and complete
+# can build the correct /v1.0/authenticators/{auth_id}/verifications/{tx_id} URL.
+_PUSH_STORE: dict[str, tuple[str, float]] = {}
+_PUSH_TTL = 180
+
+def _store_push_ctx(tx_id: str, auth_id: str) -> None:
+    _PUSH_STORE[tx_id] = (auth_id, _time.monotonic() + _PUSH_TTL)
+    expired = [k for k, (_, exp) in _PUSH_STORE.items() if _time.monotonic() > exp]
+    for k in expired:
+        _PUSH_STORE.pop(k, None)
+
+def _get_auth_id(tx_id: str) -> str:
+    entry = _PUSH_STORE.get(tx_id)
+    if not entry:
+        return ""
+    auth_id, exp = entry
+    return auth_id if _time.monotonic() < exp else ""
+
 
 class PushInitiateRequest(BaseModel):
     verify_user_id: str
@@ -41,9 +61,10 @@ class PushCompleteRequest(BaseModel):
 
 def _map_status(raw: str) -> str:
     normalized = raw.upper()
-    if normalized == "APPROVED":
+    # IBM Verify v1.0/authenticators returns VERIFY_SUCCESS on approval
+    if normalized in ("APPROVED", "VERIFY_SUCCESS", "SUCCESS"):
         return "approved"
-    if normalized in ("DENIED", "TIMEOUT", "FAILED", "EXPIRED"):
+    if normalized in ("DENIED", "TIMEOUT", "FAILED", "EXPIRED", "VERIFY_FAILED"):
         return "denied"
     return "pending"
 
@@ -53,7 +74,11 @@ async def push_initiate(req: PushInitiateRequest):
     """Send push notification to enrolled device. Returns transaction_id."""
     try:
         result = await verify_client.push_initiate(user_id=req.verify_user_id)
-        return {"transaction_id": result.get("id") or result.get("transactionId")}
+        transaction_id = result.get("id") or result.get("transactionId")
+        auth_id = result.get("_authenticator_id", result.get("authenticatorId", ""))
+        if transaction_id and auth_id:
+            _store_push_ctx(transaction_id, auth_id)
+        return {"transaction_id": transaction_id}
     except Exception:
         logger.error("Push initiate failed")
         raise HTTPException(
@@ -69,7 +94,8 @@ async def push_poll(transaction_id: str):
     Returns: {"status": "pending" | "approved" | "denied"}
     """
     try:
-        result = await verify_client.push_poll(transaction_id=transaction_id)
+        auth_id = _get_auth_id(transaction_id)
+        result = await verify_client.push_poll(transaction_id=transaction_id, authenticator_id=auth_id)
         raw = result.get("state") or result.get("status") or "PENDING"
         return {"status": _map_status(str(raw))}
     except Exception:
@@ -84,7 +110,8 @@ async def push_complete(req: PushCompleteRequest, db: AsyncSession = Depends(get
     Re-verifies approval server-side before issuing JWT — cannot be spoofed.
     """
     try:
-        result = await verify_client.push_poll(transaction_id=req.transaction_id)
+        auth_id = _get_auth_id(req.transaction_id)
+        result = await verify_client.push_poll(transaction_id=req.transaction_id, authenticator_id=auth_id)
         raw = result.get("state") or result.get("status") or "PENDING"
         if _map_status(str(raw)) != "approved":
             raise HTTPException(status_code=401, detail="Push not approved")

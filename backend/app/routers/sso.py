@@ -32,9 +32,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/sso", tags=["sso"])
 
 STATE_TTL_SECONDS = 300
-ROLE_PRIORITY = {"Admin": 3, "Manager": 2, "Customer": 1}
-# Normalised lookup — maps any casing of a group name to the canonical role string
-_ROLE_NORMALISED = {k.lower(): k for k in ROLE_PRIORITY}
+# Three workforce roles — Admin is highest priority
+ROLE_PRIORITY = {"Admin": 3, "SalesforceManager": 2, "Manager": 1}
+# Normalised lookup — maps any IBM Verify group displayName (lowercased) to the
+# canonical app role.  "Salesforce-Admin" is the single group that grants the
+# SalesforceManager role; all legacy group name variants map here too.
+_ROLE_NORMALISED: dict[str, str] = {k.lower(): k for k in ROLE_PRIORITY}
+_ROLE_NORMALISED.update({
+    # Primary IBM Verify group name for Salesforce entitlement
+    "salesforce-administrator": "SalesforceManager",
+    # Legacy / alternate names — all resolve to SalesforceManager
+    "salesforce-admin":         "SalesforceManager",
+    "salesforcemanager":        "SalesforceManager",
+    "salesmanager":             "SalesforceManager",
+    "salesrep":                 "SalesforceManager",
+    "salesadmin":               "SalesforceManager",
+    "manager":                  "Manager",
+    "admin":                    "Admin",
+})
 
 # File-backed state store so PKCE state survives uvicorn --reload restarts
 _STATE_FILE = Path.cwd() / ".oidc_states.json"
@@ -137,15 +152,15 @@ def _map_role(claims: dict) -> str:
     groups = claims.get(settings.verify_group_claim, [])
     if isinstance(groups, str):
         groups = [groups]
-    # Match case-insensitively so "admin", "Admin", "ADMIN" all work
+    # Match case-insensitively; prefer higher-priority roles
     matched_roles = [
         _ROLE_NORMALISED[g.lower()]
         for g in groups
         if g.lower() in _ROLE_NORMALISED
     ]
     if not matched_roles:
-        return "Customer"
-    return max(matched_roles, key=lambda role: ROLE_PRIORITY[role])
+        return "Manager"   # default workforce role (no Salesforce, no admin)
+    return max(matched_roles, key=lambda role: ROLE_PRIORITY.get(role, 0))
 
 
 # ACR value for step-up — read from config so it can be changed via .env
@@ -274,6 +289,11 @@ async def sso_callback(
                 ),
             },
         )
+    # Prefer the live SCIM email over the OIDC token claim.
+    # IBM Verify's OIDC token caches the email at token-issue time; an admin
+    # email change in the portal is not reflected until the next token refresh.
+    # Fetching from SCIM ensures the local DB always holds the current address.
+    email = await verify_client.get_live_email(verify_user_id, fallback=email)
     name = claims.get("name") or claims.get("preferred_username") or email
     role = _map_role(claims)
     logger.warning(
@@ -301,6 +321,7 @@ async def sso_callback(
     token_has_groups = bool(claims.get(settings.verify_group_claim))
     effective_role = role if token_has_groups else (user.role if user else role)
 
+    is_new_user = user is None
     if not user:
         user = User(
             verify_user_id=verify_user_id,
@@ -335,6 +356,9 @@ async def sso_callback(
         "token": token,
         "authenticated": True,
         "stepup_verified": False,
+        # True when this is the user's first login — the frontend should
+        # redirect to the consent capture page before the main dashboard.
+        "is_new_user": is_new_user,
         # Return the raw IBM Verify id_token so the frontend can store it as
         # id_token_hint for step-up.  Passing id_token_hint + prompt=login tells
         # IBM Verify exactly who the user is and skips the password/passkey screen,
@@ -609,7 +633,86 @@ async def get_public_config():
     Return non-secret tenant config values the frontend needs.
     Only the tenant base URL is exposed — no credentials or keys.
     """
-    return {"verify_tenant_url": settings.verify_tenant_url}
+    return {
+        "verify_tenant_url": settings.verify_tenant_url,
+        "salesforce_app_id": settings.salesforce_app_id,
+    }
+
+
+# ── Access Dashboard — Salesforce SSO launch ─────────────────────────────────
+
+SALESFORCE_ROLES = {"SalesforceManager"}
+
+
+@router.get("/app-launch/salesforce")
+async def salesforce_app_launch(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generate an IdP-initiated SSO URL that takes the current user directly
+    into Salesforce via IBM Verify.
+
+    IBM Verify IdP-initiated SSO URL pattern:
+        https://{tenant}/saml/sps/saml20idp/saml20/logininitial
+            ?RequestBinding=HTTPPost
+            &PartnerId={partner_id}        ← Salesforce Entity ID / Audience
+            &Target=https://login.salesforce.com
+            &NameIdFormat=urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
+            &login_hint={email}
+
+    When SALESFORCE_APP_ID is set (the IBM Verify application instance ID),
+    we use the direct application launch endpoint instead:
+        https://{tenant}/applaunch/{app_id}
+
+    Both URLs require the user to have an active IBM Verify session
+    (handled by the browser cookie from their earlier login).
+
+    Returns:
+        launch_url  — URL to open in the browser (new tab) to start the SSO flow
+        has_access  — True when the user's role grants Salesforce access
+        app_id      — The IBM Verify application instance ID (if configured)
+    """
+    has_access = current_user.role in SALESFORCE_ROLES
+
+    if not has_access:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "SALESFORCE_NOT_ENTITLED",
+                "message": (
+                    f"Your current role ({current_user.role}) does not include "
+                    "access to Salesforce. Contact your HR administrator to request access."
+                ),
+            },
+        )
+
+    tenant = settings.verify_tenant_url.rstrip("/")
+    app_id = settings.salesforce_app_id
+
+    if app_id:
+        # Direct application launch — IBM Verify picks up the browser session and
+        # redirects to Salesforce with a signed SAML assertion.
+        launch_url = f"{tenant}/applaunch/{app_id}"
+    else:
+        # Fallback: IdP-initiated SAML POST flow using the IBM Verify generic endpoint.
+        # Add the Salesforce metadata Entity ID as PartnerId once it is configured.
+        from urllib.parse import urlencode as _ue
+        launch_url = (
+            f"{tenant}/saml/sps/saml20idp/saml20/logininitial?"
+            + _ue({
+                "RequestBinding": "HTTPPost",
+                "NameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+                "Target": "https://login.salesforce.com",
+                "login_hint": current_user.email,
+            })
+        )
+
+    return {
+        "launch_url": launch_url,
+        "has_access": True,
+        "role": current_user.role,
+        "app_id": app_id,
+    }
 
 
 @router.get("/logout")

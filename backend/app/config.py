@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     verify_oidc_jwks_url: str
     verify_oidc_logout_url: Optional[str] = None
     verify_group_claim: str = "groups"
+    # Salesforce SSO — IBM Verify application instance ID for Salesforce.
+    # Found in IBM Verify → Applications → Salesforce → Application ID.
+    # Used to build the Identity Provider-initiated SSO URL for the access dashboard.
+    salesforce_app_id: Optional[str] = None
     frontend_base_url: str
     oidc_redirect_uri: str
     # Step-up redirect URI — defaults to the same base as oidc_redirect_uri but at /stepup-callback.
@@ -38,6 +42,11 @@ class Settings(BaseSettings):
     # Comma-separated emails that are always granted Admin role at login.
     # Used when IBM Verify group membership is not included in the ID token.
     admin_emails: str = ""
+
+    # Comma-separated emails to hide from the workforce portal user list.
+    # Use this to exclude IBM Verify tenant-owner / provisioning accounts that
+    # are not part of the demo (e.g. the account used to set up the tenant).
+    hidden_emails: str = ""
 
     # ── SMTP — optional, used to email temp passwords on admin-initiated reset ─
     # If smtp_host is not set, temp password emails are skipped (admin must
@@ -61,11 +70,11 @@ class Settings(BaseSettings):
 
     # How long (minutes) the main session JWT remains valid.
     # Set SESSION_EXPIRE_MINUTES in .env to override (default: 60).
-    session_expire_minutes: int = 3
+    session_expire_minutes: int = 60
 
     # How long (minutes) a step-up token remains valid after issue.
     # After this window the user must re-verify even if their session is active.
-    stepup_duration_minutes: int = 1
+    stepup_duration_minutes: int = 5
 
     # When True, every admin operation (create/update/disable/delete user) requires
     # a valid step-up even if the admin already completed one earlier in the session.

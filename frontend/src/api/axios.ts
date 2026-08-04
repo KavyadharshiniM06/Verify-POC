@@ -10,9 +10,13 @@ const api = axios.create({
 // (which persists across browser sessions). This is a reasonable trade-off for a POC.
 // In production, prefer an in-memory React context to avoid XSS token exposure entirely.
 api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('mb_token')
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`
+  // Only inject the stored session token if the caller has not already set
+  // an explicit Authorization header (e.g. a one-off step-up token override).
+  if (!config.headers['Authorization']) {
+    const token = sessionStorage.getItem('mb_token')
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
   }
   return config
 })

@@ -115,7 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // window.location.replace clears the history stack so the user cannot
     // press Back into the (now-invalid) session.
     const encoded = encodeURIComponent(message)
-    window.location.replace(`/?consent_error=${encoded}`)
+    window.location.replace(`/admin?consent_error=${encoded}`)
   }
 
   return (

@@ -3,6 +3,12 @@ import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 import { T } from '../styles/theme'
 
+// ─── Inline 2FA types (mirrors LoanApprovalPage pattern) ─────────────────────
+type Mfa2Phase = 'idle' | 'pick_method' | 'beginning' | 'otp_input' | 'push_polling' | 'verifying' | 'done' | 'error'
+interface StepUpBeginResult { method: string; transaction_id: string | null; message: string; otp_hint?: string }
+interface StepUpCompleteResult { token: string; user: { name: string; email: string; role: string }; stepup_verified: boolean }
+interface MfaMethodMeta { method: string; label: string; icon: string; description: string }
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ManagedUser {
   id: string
@@ -27,7 +33,14 @@ interface AuditEntry {
 type FormMode = { kind: 'create' } | { kind: 'edit'; user: ManagedUser } | null
 type TempPasswordModal = { name: string; email: string; password: string } | null
 
-const ROLES = ['Customer', 'Manager', 'Admin']
+// Roles that grant Salesforce entitlement in the launchpad
+const SALESFORCE_ROLES = new Set(['SalesforceManager'])
+
+const ROLE_DISPLAY: Record<string, string> = {
+  Manager:          'Credit Analyst',
+  SalesforceManager:'Salesforce Admin',
+  Admin:            'Administrator',
+}
 
 const ACTION_LABEL: Record<string, string> = {
   joiner:           'Joiner',
@@ -48,10 +61,10 @@ const ACTION_COLOR: Record<string, string> = {
 // ─── Consistent avatar colour ────────────────────────────────────────────────
 // Avatar colour matches the legend: role when active, red when suspended
 function avatarColor(role: string, isActive: boolean) {
-  if (!isActive) return '#ef4444'          // Suspended → red  (legend: Suspended)
-  if (role === 'Admin')    return '#a78bfa' // Admin     → purple (legend: Admins)
-  if (role === 'Manager')  return '#3b82f6' // Manager   → blue   (legend: Managers)
-  return '#0ea5e9'                          // Customer  → sky    (legend: Customers)
+  if (!isActive) return '#ef4444'
+  if (role === 'Admin')             return '#a78bfa'
+  if (role === 'SalesforceManager') return '#10b981'
+  return '#3b82f6'  // Manager
 }
 function initials(name: string) {
   const parts = name.trim().split(' ')
@@ -111,21 +124,23 @@ function XIcon() {
 
 // ─── Role badge ───────────────────────────────────────────────────────────────
 const ROLE_STYLE: Record<string, { bg: string; color: string; border: string }> = {
-  Customer: { bg: T.bgMuted,     color: T.inkSub, border: T.border     },
-  Manager:  { bg: T.blueLight,   color: T.blue,   border: T.blue + '44' },
-  Admin:    { bg: T.amberLight,  color: T.amber,  border: T.amberBorder },
+  Manager:          { bg: T.blueLight,             color: T.blue,    border: T.blue + '44'           },
+  SalesforceManager:{ bg: 'rgba(16,185,129,0.12)', color: '#10b981', border: 'rgba(16,185,129,0.30)' },
+  Admin:            { bg: T.amberLight,            color: T.amber,   border: T.amberBorder           },
 }
 function RoleBadge({ role }: { role: string }) {
-  const st = ROLE_STYLE[role] ?? ROLE_STYLE.Customer
+  const st = ROLE_STYLE[role] ?? ROLE_STYLE.Manager
+  const isSF = SALESFORCE_ROLES.has(role)
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+      display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
       fontSize: '0.72rem', fontWeight: 700, padding: '0.18rem 0.55rem',
       borderRadius: '999px', border: `1px solid ${st.border}`,
       background: st.bg, color: st.color,
     }}>
+      {isSF && <span style={{ fontSize: '0.6rem', opacity: 0.85 }}>☁</span>}
       <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: st.color, flexShrink: 0 }} />
-      {role}
+      {ROLE_DISPLAY[role] ?? role}
     </span>
   )
 }
@@ -133,10 +148,11 @@ function RoleBadge({ role }: { role: string }) {
 // ─── Per-row action dropdown ──────────────────────────────────────────────────
 function ActionMenu({
   user,
-  onEdit, onHistory, onResetPwd, onDisable, onReinstate, onDelete,
+  onEdit, onHistory, onResetPwd, onResetMFA, onDisable, onReinstate, onDelete,
 }: {
   user: ManagedUser
   onEdit: () => void; onHistory: () => void; onResetPwd: () => void
+  onResetMFA: () => void
   onDisable: () => void; onReinstate: () => void; onDelete: () => void
 }) {
   const [open, setOpen]       = useState(false)
@@ -187,15 +203,16 @@ function ActionMenu({
       </button>
       {open && (
         <div style={{ ...m.menu, ...menuPos }}>
-          {item('Edit user',      T.ink, onEdit)}
-          {item('View history',   T.ink, onHistory)}
-          {item('Reset password', T.ink, onResetPwd)}
+          {item('Edit / Mover',    T.ink,   onEdit)}
+          {item('View history',    T.ink,   onHistory)}
+          {item('Reset password',  T.ink,   onResetPwd)}
+          {item('Reset MFA',       T.amber, onResetMFA)}
           <div style={m.menuDivider} />
           {user.is_active
-            ? item('Suspend access', T.ink, onDisable)
-            : item('Reinstate',      T.green, onReinstate)
+            ? item('Suspend (Leaver)', T.orange, onDisable)
+            : item('Reinstate',        T.green,  onReinstate)
           }
-          {item('Delete user', T.red, onDelete)}
+          {item('Delete (Hard Leaver)', T.red, onDelete)}
         </div>
       )}
     </div>
@@ -231,6 +248,7 @@ export default function AdminUsersPage() {
   const [users,        setUsers]        = useState<ManagedUser[]>([])
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState<string | null>(null)
+  const [info,         setInfo]         = useState<string | null>(null)
   const [search,       setSearch]       = useState('')
   const [roleFilter,   setRoleFilter]   = useState<string>('All')
   const [statusFilter, setStatusFilter] = useState<string>('All')
@@ -249,27 +267,26 @@ export default function AdminUsersPage() {
   useEffect(load, [])
 
   // ── Derived stats ────────────────────────────────────────────────────────
-  const total     = users.length
-  const active    = users.filter(u => u.is_active).length
-  const suspended = users.filter(u => !u.is_active).length
-  const admins    = users.filter(u => u.role === 'Admin').length
-  const managers  = users.filter(u => u.role === 'Manager').length
-  const customers = users.filter(u => u.role === 'Customer').length
-  const now       = Date.now()
-  const joined7d  = users.filter(u => {
+  const total      = users.length
+  const active     = users.filter(u => u.is_active).length
+  const suspended  = users.filter(u => !u.is_active).length
+  const admins     = users.filter(u => u.role === 'Admin').length
+  const managers   = users.filter(u => u.role === 'Manager').length
+  const sfManagers = users.filter(u => u.role === 'SalesforceManager').length
+  const now        = Date.now()
+  const joined7d   = users.filter(u => {
     try { return now - new Date(u.created_at).getTime() < 7 * 86_400_000 } catch { return false }
   }).length
 
   // Each stat can declare a filter it drives. Clicking it toggles that filter on/off.
   const STATS = [
-    { label: 'Total Users', value: total,     color: T.ink,     filter: { kind: 'reset'  as const, value: 'All'       } },
-    { label: 'Active',      value: active,    color: T.green,   filter: { kind: 'status' as const, value: 'Active'    } },
-    { label: 'Pending',     value: 0,         color: T.amber,   filter: null },
-    { label: 'Suspended',   value: suspended, color: T.red,     filter: { kind: 'status' as const, value: 'Suspended' } },
-    { label: 'Admins',      value: admins,    color: '#a78bfa', filter: { kind: 'role'   as const, value: 'Admin'     } },
-    { label: 'Managers',    value: managers,  color: T.blue,    filter: { kind: 'role'   as const, value: 'Manager'   } },
-    { label: 'Customers',   value: customers, color: '#0ea5e9', filter: { kind: 'role'   as const, value: 'Customer'  } },
-    { label: 'Joined (7d)', value: joined7d,  color: '#0ea5e9', filter: null },
+    { label: 'Total Users',       value: total,      color: T.ink,     filter: { kind: 'reset'  as const, value: 'All'              } },
+    { label: 'Active',            value: active,     color: T.green,   filter: { kind: 'status' as const, value: 'Active'           } },
+    { label: 'Suspended',         value: suspended,  color: T.red,     filter: { kind: 'status' as const, value: 'Suspended'        } },
+    { label: 'Administrators',    value: admins,     color: '#a78bfa', filter: { kind: 'role'   as const, value: 'Admin'            } },
+    { label: 'Managers',          value: managers,   color: T.blue,    filter: { kind: 'role'   as const, value: 'Manager'          } },
+    { label: '☁ SF Managers',     value: sfManagers, color: '#10b981', filter: { kind: 'role'   as const, value: 'SalesforceManager'} },
+    { label: 'Joined (7d)',       value: joined7d,   color: '#0ea5e9', filter: null },
   ]
 
   const handleLegendClick = (stat: typeof STATS[number]) => {
@@ -327,13 +344,31 @@ export default function AdminUsersPage() {
   }
   const handleDisable = async (u: ManagedUser) => {
     if (!confirm(`Suspend access for ${u.name}?`)) return
-    try { await api.post(`/users/${u.id}/disable`); load() } catch { setError('Failed to suspend user.') }
+    setInfo(null)
+    try {
+      await api.post(`/users/${u.id}/disable`)
+      load()
+      if (u.role === 'SalesforceManager') {
+        setInfo(`${u.name} suspended. IBM Verify group membership removed — Salesforce account will be suspended via provisioning.`)
+      }
+    } catch { setError('Failed to suspend user.') }
   }
   const handleReinstate = async (u: ManagedUser) => {
-    try { await api.post(`/users/${u.id}/reinstate`); load() } catch { setError('Failed to reinstate user.') }
+    setInfo(null)
+    try {
+      await api.post(`/users/${u.id}/reinstate`)
+      load()
+      if (u.role === 'SalesforceManager') {
+        setInfo(`${u.name} reinstated. IBM Verify group membership restored — Salesforce account will be re-activated via provisioning.`)
+      }
+    } catch { setError('Failed to reinstate user.') }
+  }
+  const handleResetMFA = async (u: ManagedUser) => {
+    if (!confirm(`Reset all MFA factors for ${u.name}? They will be forced to re-enrol on next login.`)) return
+    try { await api.delete(`/users/${u.id}/factors`); load() } catch { setError('Failed to reset MFA.') }
   }
   const handleDelete = async (u: ManagedUser) => {
-    if (!confirm(`Permanently delete ${u.name}? This cannot be undone.`)) return
+    if (!confirm(`Permanently delete ${u.name}? This removes them from IBM Verify and cannot be undone.`)) return
     try { await api.delete(`/users/${u.id}`); load() } catch { setError('Failed to delete user.') }
   }
 
@@ -347,8 +382,14 @@ export default function AdminUsersPage() {
       {/* ── Page header ── */}
       <div style={s.pageHead}>
         <div>
-          <h1 style={s.pageTitle}>Identity Lifecycle</h1>
-          <p style={s.pageSub}>Manage the complete employee identity lifecycle across onboarding, access reviews, role changes and offboarding.</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.35rem' }}>
+            <h1 style={s.pageTitle}>Workforce Identity Management</h1>
+            <span style={s.hrBadge}>IBM Verify · Source of Truth</span>
+          </div>
+          <p style={s.pageSub}>
+            Onboard and manage workforce identities — Managers, Salesforce Admins, and Administrators.
+            IBM Verify is the authoritative identity source. All provisioning flows through this portal.
+          </p>
         </div>
         <div style={s.headActions}>
           <button style={s.outlineBtn} onClick={load} title="Refresh"><RefreshIcon /> Refresh</button>
@@ -410,6 +451,13 @@ export default function AdminUsersPage() {
         </div>
       )}
 
+      {info && (
+        <div style={s.infoBox}>
+          <span>ℹ {info}</span>
+          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.blue }} onClick={() => setInfo(null)}><XIcon /></button>
+        </div>
+      )}
+
       {/* ── Search + filter bar ── */}
       <div style={s.toolbar}>
         <div style={s.searchWrap}>
@@ -438,8 +486,8 @@ export default function AdminUsersPage() {
             value={roleFilter}
             onChange={e => setRoleFilter(e.target.value)}
           >
-            {['All', 'Customer', 'Manager', 'Admin'].map(v => (
-              <option key={v}>Role: {v}</option>
+            {['All', 'Manager', 'SalesforceManager', 'Admin'].map(v => (
+              <option key={v} value={v}>Role: {v === 'All' ? 'All' : (ROLE_DISPLAY[v] ?? v)}</option>
             ))}
           </select>
         </div>
@@ -544,6 +592,7 @@ export default function AdminUsersPage() {
                         onEdit={()       => setForm({ kind: 'edit', user: u })}
                         onHistory={()    => openAudit(u)}
                         onResetPwd={()   => handleResetPassword(u)}
+                        onResetMFA={()   => handleResetMFA(u)}
                         onDisable={()    => handleDisable(u)}
                         onReinstate={()  => handleReinstate(u)}
                         onDelete={()     => handleDelete(u)}
@@ -662,32 +711,152 @@ export default function AdminUsersPage() {
 function UserFormModal({
   mode, onClose, onSaved,
 }: { mode: Exclude<FormMode, null>; onClose: () => void; onSaved: () => void }) {
+  const { login } = useAuth()
   const isEdit   = mode.kind === 'edit'
   const existing = isEdit ? mode.user : null
-  const [email,    setEmail]    = useState(existing?.email    ?? '')
-  const [name,     setName]     = useState(existing?.name     ?? '')
-  const [role,     setRole]     = useState(existing?.role     ?? 'Customer')
+
+  // Joiner-only identity fields
+  const [firstName, setFirstName] = useState('')
+  const [lastName,  setLastName]  = useState('')
+  const [username,  setUsername]  = useState('')
+
+  // Shared fields
+  const [email,    setEmail]    = useState(existing?.email ?? '')
+  const [role,     setRole]     = useState(existing?.role  ?? 'Manager')
   const [isActive, setIsActive] = useState(existing?.is_active ?? true)
   const [saving,   setSaving]   = useState(false)
   const [error,    setError]    = useState<string | null>(null)
 
+  // Derived full name from first + last (Joiner only)
+  const derivedName = isEdit
+    ? (existing?.name ?? '')
+    : [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
+
+  // ── Inline 2FA state (for Mover role-change) ──────────────────────────────
+  const [mfa2Phase,    setMfa2Phase]   = useState<Mfa2Phase>('idle')
+  const [mfa2Methods,  setMfa2Methods] = useState<MfaMethodMeta[]>([])
+  const [mfa2Method,   setMfa2Method]  = useState('')
+  const [mfa2TxId,     setMfa2TxId]    = useState<string | null>(null)
+  const [mfa2Msg,      setMfa2Msg]     = useState('')
+  const [mfa2Otp,      setMfa2Otp]     = useState('')
+  const [mfa2OtpHint,  setMfa2OtpHint] = useState('')
+  const [mfa2Err,      setMfa2Err]     = useState('')
+  const pendingPayload = useRef<{ email: string; name: string; role: string; is_active: boolean; id: string } | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
+
+  const isRoleChange = isEdit && existing !== null && existing.role !== role
+
+  // ── Load available MFA methods and show picker ────────────────────────────
+  const begin2FA = async () => {
+    setMfa2Phase('beginning'); setMfa2Err('')
+    try {
+      const { data } = await api.get<{ methods: MfaMethodMeta[] }>('/auth/stepup/methods')
+      setMfa2Methods(data.methods ?? [])
+      setMfa2Phase('pick_method')
+    } catch {
+      setMfa2Err('Could not load verification methods. Please try again.')
+      setMfa2Phase('error')
+    }
+  }
+
+  // ── Begin the chosen method's challenge ───────────────────────────────────
+  const selectMethod2FA = async (methodKey: string) => {
+    setMfa2Method(methodKey)
+    setMfa2Phase('beginning'); setMfa2Err('')
+    if (pollRef.current) clearInterval(pollRef.current)
+    try {
+      const { data } = await api.post<StepUpBeginResult>('/auth/stepup/begin', {
+        return_to: '/admin/users',
+        preferred_method: methodKey,
+      })
+      setMfa2TxId(data.transaction_id)
+      setMfa2Msg(data.message)
+      setMfa2OtpHint(data.otp_hint ?? '')
+      if (data.method === 'push') {
+        setMfa2Phase('push_polling')
+        pollRef.current = setInterval(async () => {
+          try {
+            const { data: poll } = await api.get<{ status: string }>(`/auth/stepup/poll/${data.transaction_id}`)
+            if (poll.status === 'approved') {
+              clearInterval(pollRef.current!)
+              await complete2FA('push', data.transaction_id, undefined)
+            } else if (poll.status === 'denied') {
+              clearInterval(pollRef.current!)
+              setMfa2Err('Push request was denied on your device.')
+              setMfa2Phase('error')
+            }
+          } catch { /* keep polling */ }
+        }, 2500)
+      } else {
+        setMfa2Phase('otp_input')
+      }
+    } catch {
+      setMfa2Err('Could not start verification. Please try another method.')
+      setMfa2Phase('pick_method')
+    }
+  }
+
+  // ── Verify code and save ──────────────────────────────────────────────────
+  const complete2FA = async (m: string, tid: string | null, otpCode: string | undefined) => {
+    setMfa2Phase('verifying')
+    try {
+      const body: Record<string, string | null> = { method: m, transaction_id: tid ?? null }
+      if (otpCode) body.otp_code = otpCode
+      const { data: su } = await api.post<StepUpCompleteResult>('/auth/stepup/complete', body)
+      if (pendingPayload.current) {
+        const pl = pendingPayload.current
+        await api.put(`/users/${pl.id}`,
+          { email: pl.email, name: pl.name, role: pl.role, is_active: pl.is_active },
+          { headers: { Authorization: `Bearer ${su.token}` } },
+        )
+        login(su.token, su.user, true)
+      }
+      setMfa2Phase('done')
+      setTimeout(() => onSaved(), 600)
+    } catch {
+      setMfa2Err('MFA verification failed. Please try again.')
+      setMfa2Phase('error')
+    }
+  }
+
   const handleSave = async () => {
-    if (!email.trim() || !name.trim()) { setError('Email and name are required'); return }
+    if (!email.trim()) { setError('Email address is required'); return }
+    if (!isEdit && (!firstName.trim() || !lastName.trim())) { setError('First name and last name are required'); return }
+    if (!isEdit && !username.trim()) { setError('Preferred username is required'); return }
+    if (!isEdit && !derivedName) { setError('First name and last name are required'); return }
     setSaving(true); setError(null)
     try {
       if (isEdit && existing) {
-        await api.put(`/users/${existing.id}`, { email, name, role, is_active: isActive })
+        // If role is changing, store payload and kick off 2FA first
+        if (isRoleChange) {
+          pendingPayload.current = { email, name: derivedName, role, is_active: isActive, id: existing.id }
+          setSaving(false)
+          await begin2FA()
+          return
+        }
+        await api.put(`/users/${existing.id}`, { email, name: derivedName, role, is_active: isActive })
       } else {
-        await api.post('/users', { email, name, role })
+        await api.post('/users', {
+          email,
+          name: derivedName,
+          role,
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          username: username.trim(),
+        })
       }
       onSaved()
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail ?? 'Save failed.')
+      const rawDetail = (e as { response?: { data?: { detail?: string | { code?: string; message?: string } } } })?.response?.data?.detail
+      const msg = typeof rawDetail === 'object' ? (rawDetail as { message?: string })?.message : rawDetail
+      setError(msg ?? 'Save failed.')
     } finally {
       setSaving(false)
     }
   }
+
+  const METHOD_LABEL: Record<string, string> = { push: 'Push Notification', totp: 'Authenticator App', email_otp: 'Email OTP', fido2: 'Passkey' }
 
   return (
     <div style={s.overlay} onClick={onClose}>
@@ -700,20 +869,184 @@ function UserFormModal({
           <button style={s.closeBtn} onClick={onClose}><XIcon /></button>
         </div>
 
-        <div style={s.formGrid}>
-          <div style={s.fieldWrap}>
-            <label style={s.label}>Full Name</label>
-            <input style={s.input} value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith" />
+        {/* 2FA inline panel — shown when a role change triggers step-up */}
+        {mfa2Phase !== 'idle' && (
+          <div style={{ margin: '0 1.5rem 0.5rem', background: T.amberLight, border: `1px solid ${T.amberBorder}`, borderRadius: '10px', padding: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
+              <span style={{ color: T.amber, fontWeight: 700, fontSize: '0.82rem' }}>🔒 IBM Verify 2FA Required — Role Change (Mover)</span>
+            </div>
+            {mfa2Phase === 'beginning' && (
+              <div style={{ fontSize: '0.78rem', color: T.inkSub }}>Starting MFA challenge…</div>
+            )}
+            {mfa2Phase === 'pick_method' && (
+              <div>
+                <div style={{ fontSize: '0.78rem', color: T.inkSub, marginBottom: '0.6rem' }}>
+                  Choose how you want to verify this role change:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {mfa2Methods.map(m => (
+                    <button
+                      key={m.method}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.6rem',
+                        padding: '0.55rem 0.75rem',
+                        background: T.bgInput, border: `1.5px solid ${T.border}`,
+                        borderRadius: '8px', cursor: 'pointer',
+                        textAlign: 'left', color: T.ink,
+                        fontSize: '0.82rem', fontFamily: 'inherit', fontWeight: 600,
+                        transition: 'border-color 0.15s',
+                      }}
+                      onClick={() => selectMethod2FA(m.method)}
+                    >
+                      <span style={{ fontSize: '1.1rem', lineHeight: 1 }}>{m.icon}</span>
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{m.label}</div>
+                        <div style={{ fontSize: '0.72rem', color: T.inkSub, fontWeight: 400 }}>{m.description}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: T.inkSub, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  onClick={() => setMfa2Phase('idle')}
+                >
+                  ← Cancel
+                </button>
+              </div>
+            )}
+            {mfa2Phase === 'push_polling' && (
+              <div>
+                <div style={{ fontSize: '0.78rem', color: T.inkSub, marginBottom: '0.4rem' }}>
+                  📱 Approve the push notification on your device…
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: T.inkLight }}>
+                  <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: T.amber, animation: 'pulse 1.2s infinite' }} />
+                  Waiting for approval…
+                </div>
+                <button
+                  style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: T.inkSub, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  onClick={() => { if (pollRef.current) clearInterval(pollRef.current); setMfa2Phase('pick_method') }}
+                >
+                  ← Use a different method
+                </button>
+              </div>
+            )}
+            {mfa2Phase === 'otp_input' && (
+              <div>
+                <div style={{ fontSize: '0.78rem', color: T.inkSub, marginBottom: '0.5rem' }}>{METHOD_LABEL[mfa2Method] ?? mfa2Method} — {mfa2Msg}</div>
+                {mfa2OtpHint && (
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                    marginBottom: '0.5rem',
+                    padding: '0.25rem 0.55rem',
+                    background: T.amberLight, border: `1px solid ${T.amberBorder}`,
+                    borderRadius: '5px', fontSize: '0.73rem', color: T.amber,
+                  }}>
+                    <span style={{ fontWeight: 700 }}>Starts with:</span>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.06em' }}>{mfa2OtpHint}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    style={{ flex: 1, padding: '0.5rem 0.7rem', background: T.bgInput, border: `1px solid ${T.border}`, borderRadius: '7px', color: T.ink, fontSize: '1rem', fontFamily: 'monospace', letterSpacing: '0.05em' }}
+                    value={mfa2Otp} onChange={e => setMfa2Otp(e.target.value.replace(/\s/g, ''))}
+                    onKeyDown={e => e.key === 'Enter' && complete2FA(mfa2Method, mfa2TxId, mfa2Otp.trim())}
+                    placeholder="Enter code" autoFocus maxLength={16} inputMode="numeric"
+                  />
+                  <button style={{ padding: '0.5rem 1rem', background: T.amber, color: '#0d1117', border: 'none', borderRadius: '7px', cursor: 'pointer', fontWeight: 700, fontSize: '0.82rem', fontFamily: 'inherit' }}
+                    onClick={() => complete2FA(mfa2Method, mfa2TxId, mfa2Otp.trim())} disabled={!mfa2Otp.trim()}>
+                    Verify
+                  </button>
+                </div>
+                <button
+                  style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: T.inkSub, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  onClick={() => { setMfa2Otp(''); setMfa2OtpHint(''); setMfa2Phase('pick_method') }}
+                >
+                  ← Use a different method
+                </button>
+              </div>
+            )}
+            {mfa2Phase === 'verifying' && <div style={{ fontSize: '0.78rem', color: T.inkSub }}>Verifying with IBM Verify…</div>}
+            {mfa2Phase === 'done' && <div style={{ fontSize: '0.78rem', color: T.green }}>✓ MFA verified. Saving…</div>}
+            {mfa2Phase === 'error' && (
+              <div>
+                <div style={{ fontSize: '0.78rem', color: T.red, marginBottom: '0.4rem' }}>{mfa2Err}</div>
+                <button style={{ fontSize: '0.78rem', color: T.amber, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => { setMfa2OtpHint(''); setMfa2Otp(''); setMfa2Err(''); setMfa2Phase('pick_method') }}>Try again</button>
+              </div>
+            )}
           </div>
+        )}
+
+        <div style={s.formGrid}>
+          {/* ── Joiner-only identity fields ── */}
+          {!isEdit && (
+            <>
+              <div style={{ ...s.fieldWrap, gridColumn: '1 / -1' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  <div>
+                    <label style={s.label}>First Name <span style={{ color: T.red }}>*</span></label>
+                    <input style={s.input} value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Jane" autoFocus />
+                  </div>
+                  <div>
+                    <label style={s.label}>Last Name <span style={{ color: T.red }}>*</span></label>
+                    <input style={s.input} value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Smith" />
+                  </div>
+                </div>
+              </div>
+              <div style={s.fieldWrap}>
+                <label style={s.label}>Preferred Username <span style={{ color: T.red }}>*</span></label>
+                <input
+                  style={s.input}
+                  value={username}
+                  onChange={e => setUsername(e.target.value.trim())}
+                  placeholder="jsmith"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+                <div style={{ fontSize: '0.72rem', color: T.inkSub, marginTop: '0.3rem' }}>
+                  Used as the IBM Verify login username — entered exactly as typed, no domain added.
+                </div>
+              </div>
+              {derivedName && (
+                <div style={{ ...s.fieldWrap, gridColumn: '1 / -1' }}>
+                  <label style={s.label}>Full Name (derived)</label>
+                  <div style={{ ...s.input, background: T.bgMuted, color: T.inkSub, cursor: 'default', userSelect: 'none' as const }}>
+                    {derivedName}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {/* ── Edit mode: show current full name (read-only, can't rename via IBM Verify) ── */}
+          {isEdit && (
+            <div style={s.fieldWrap}>
+              <label style={s.label}>Full Name</label>
+              <input style={{ ...s.input, background: T.bgMuted, color: T.inkSub, cursor: 'default' }} value={existing?.name ?? ''} readOnly />
+            </div>
+          )}
           <div style={s.fieldWrap}>
-            <label style={s.label}>Email Address</label>
+            <label style={s.label}>Email Address <span style={{ color: T.red }}>*</span></label>
             <input style={s.input} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@mockbank.com" />
           </div>
           <div style={s.fieldWrap}>
             <label style={s.label}>Role</label>
             <select style={s.input} value={role} onChange={e => setRole(e.target.value)}>
-              {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              <option value="Manager">Credit Analyst — loan approval &amp; financial access</option>
+              <option value="SalesforceManager">Salesforce Admin — Salesforce access via SSO</option>
+              <option value="Admin">Administrator — full workforce admin access</option>
             </select>
+            {SALESFORCE_ROLES.has(role) && (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#10b981', display: 'flex', gap: '0.35rem', alignItems: 'flex-start' }}>
+                <span>☁</span>
+                <span>This role entitles the user to Salesforce access via IBM Verify SAML SSO. Salesforce account is auto-provisioned on first login (JIT).</span>
+              </div>
+            )}
+            {isRoleChange && mfa2Phase === 'idle' && (
+              <div style={{ marginTop: '0.4rem', fontSize: '0.72rem', color: T.amber, display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                🔒 <span>Role change requires IBM Verify 2FA (Mover policy)</span>
+              </div>
+            )}
           </div>
           {isEdit && (
             <div style={s.fieldWrap}>
@@ -741,8 +1074,11 @@ function UserFormModal({
         {error && <div style={s.errorBox}><span>⚠ {error}</span></div>}
 
         <div style={{ display: 'flex', gap: '0.6rem', marginTop: '1.25rem' }}>
-          <button style={s.primaryBtn} onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create User'}
+          <button style={s.primaryBtn} onClick={handleSave}
+            disabled={saving || ['beginning','push_polling','verifying','done'].includes(mfa2Phase)}>
+            {saving ? 'Saving…' :
+             isRoleChange && mfa2Phase === 'idle' ? '🔒 Save + Verify 2FA' :
+             isEdit ? 'Save Changes' : 'Create User'}
           </button>
           <button style={s.outlineBtn} onClick={onClose}>Cancel</button>
         </div>
@@ -769,6 +1105,16 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: T.shadowCard, gap: '0',
   },
   legendItem:    { display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.3rem 0.85rem' },
+
+  // HR Portal badge
+  hrBadge: {
+    display: 'inline-flex', alignItems: 'center',
+    fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em',
+    textTransform: 'uppercase' as const,
+    padding: '0.2rem 0.6rem', borderRadius: '999px',
+    background: 'rgba(6,182,212,0.12)', color: '#06b6d4',
+    border: '1px solid rgba(6,182,212,0.35)',
+  },
   legendDot:     { width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0 },
   legendLabel:   { fontSize: '0.72rem', fontWeight: 600, color: T.inkSub, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
   legendValue:   { fontSize: '1rem', fontWeight: 700, lineHeight: 1 },
@@ -843,6 +1189,12 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: T.radiusInner, padding: '0.6rem 0.9rem',
     fontSize: '0.83rem', marginBottom: '1rem',
   },
+  infoBox: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    background: T.blueLight, border: `1px solid ${T.blue}44`, color: T.blue,
+    borderRadius: T.radiusInner, padding: '0.6rem 0.9rem',
+    fontSize: '0.83rem', marginBottom: '1rem',
+  },
   toastBox: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     background: T.greenLight, border: `1px solid ${T.greenBorder}`, color: T.green,
@@ -852,8 +1204,8 @@ const s: Record<string, React.CSSProperties> = {
 
   // Modal
   overlay:   { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' },
-  modal:     { background: T.bgCard, borderRadius: T.radiusCard, padding: '1.75rem', width: '100%', maxWidth: '460px', boxShadow: T.shadowPop, border: `1px solid ${T.border}` },
-  modalHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' },
+  modal:     { background: T.bgCard, borderRadius: T.radiusCard, padding: '2.25rem', width: '100%', maxWidth: '640px', boxShadow: T.shadowPop, border: `1px solid ${T.border}` },
+  modalHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' },
   modalTitle:{ fontSize: '1.05rem', fontWeight: 700, color: T.ink },
   modalSub:  { fontSize: '0.78rem', color: T.inkSub, marginTop: '0.2rem' },
   closeBtn:  { background: 'none', border: 'none', cursor: 'pointer', color: T.inkSub, padding: '0.1rem', display: 'flex' },
@@ -866,11 +1218,11 @@ const s: Record<string, React.CSSProperties> = {
   },
 
   // Form
-  formGrid:  { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' },
-  fieldWrap: { display: 'flex', flexDirection: 'column', gap: '0.3rem' },
+  formGrid:  { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1rem' },
+  fieldWrap: { display: 'flex', flexDirection: 'column', gap: '0.35rem' },
   label:     { fontSize: '0.78rem', fontWeight: 600, color: T.inkSub },
   input: {
-    padding: '0.55rem 0.75rem', border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
+    padding: '0.65rem 0.85rem', border: `1px solid ${T.border}`, borderRadius: T.radiusInput,
     fontSize: '0.87rem', color: T.ink, outline: 'none', boxSizing: 'border-box' as const,
     background: T.bgInput, fontFamily: 'inherit',
   },

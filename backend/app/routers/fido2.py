@@ -5,7 +5,17 @@ Flow:
   Registration: POST /auth/fido2/register/begin → browser WebAuthn API → POST /auth/fido2/register/complete
   Login:        POST /auth/fido2/login/begin    → browser WebAuthn API → POST /auth/fido2/login/complete
 """
+import json as _json_mod
 import logging
+
+
+def _ibv_message(body: str) -> str:
+    """Extract IBM Verify messageDescription or return empty string."""
+    try:
+        return _json_mod.loads(body).get("messageDescription", "")
+    except Exception:
+        return ""
+
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -54,9 +64,16 @@ async def register_begin(req: RegisterBeginRequest):
             display_name=req.display_name,
         )
         return options
-    except Exception:
-        logger.error("FIDO2 register/begin failed")
-        raise HTTPException(status_code=502, detail="Identity provider error")
+    except Exception as exc:
+        import httpx as _httpx
+        if isinstance(exc, _httpx.HTTPStatusError):
+            body = exc.response.text if exc.response is not None else ""
+            status = exc.response.status_code if exc.response is not None else 502
+            msg = _ibv_message(body) or f"IBM Verify returned {status}: {body[:200]}"
+            logger.error("FIDO2 register/begin IBM Verify error %s: %s", status, body[:400])
+            raise HTTPException(status_code=502, detail=msg) from exc
+        logger.error("FIDO2 register/begin failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post("/register/complete")
@@ -74,17 +91,26 @@ async def register_complete(req: RegisterCompleteRequest, db: AsyncSession = Dep
         logger.error("FIDO2 register/complete failed")
         raise HTTPException(status_code=401, detail="Passkey registration failed")
 
+    # Always use the live email from IBM Verify — source of truth
+    live_email = await verify_client.get_live_email(req.verify_user_id, fallback=req.email)
+
     # Upsert user in local DB
     db_result = await db.execute(select(User).where(User.verify_user_id == req.verify_user_id))
     user = db_result.scalar_one_or_none()
     if not user:
-        user = User(verify_user_id=req.verify_user_id, email=req.email, name=req.name)
+        user = User(verify_user_id=req.verify_user_id, email=live_email, name=req.name)
         db.add(user)
         await db.flush()
         await seed_user_data(db, user.id, req.verify_user_id)
+    elif user.email.lower() != live_email.lower():
+        logger.info(
+            "fido2_register_complete: syncing local DB email %r → %r for user %s",
+            user.email, live_email, req.verify_user_id,
+        )
+        user.email = live_email
     await db.commit()
 
-    token = create_session_token(req.verify_user_id, req.email, req.name, user.role)
+    token = create_session_token(req.verify_user_id, live_email, req.name, user.role)
     return {"token": token, "user": {"name": user.name, "email": user.email, "role": user.role}}
 
 

@@ -45,9 +45,55 @@ router = APIRouter(prefix="/auth/stepup", tags=["stepup"])
 
 _bearer = HTTPBearer()
 
-# Factor preference order — push is least disruptive, totp needs app open,
-# email_otp is the universal fallback.
-_FACTOR_PREFERENCE = ["push", "totp", "fido2", "email_otp"]
+# Factor preference order for inline step-up challenges.
+# fido2 is excluded here — the inline modal has no WebAuthn browser API
+# integration and fido2_login_begin 403s when FIDO2_RP_ID is "localhost"
+# (the RP ID must match the actual origin serving the page).
+# fido2 step-up goes through the full OIDC redirect flow (/stepup/initiate),
+# not the inline /begin+complete flow.
+_FACTOR_PREFERENCE = ["push", "totp", "email_otp"]
+
+# ── In-process stores for factor context ─────────────────────────────────────
+import time as _time
+
+# Email OTP: tx_id → (winning_token, enrollment_id, expires_at)
+_EMAIL_OTP_STORE: dict[str, tuple[str, str, float]] = {}
+_EMAIL_OTP_TTL = 600  # 10 minutes
+
+def _store_otp_ctx(tx_id: str, token: str, enrollment_id: str) -> None:
+    _EMAIL_OTP_STORE[tx_id] = (token, enrollment_id, _time.monotonic() + _EMAIL_OTP_TTL)
+    expired = [k for k, (_, _, exp) in _EMAIL_OTP_STORE.items() if _time.monotonic() > exp]
+    for k in expired:
+        _EMAIL_OTP_STORE.pop(k, None)
+
+def _pop_otp_ctx(tx_id: str) -> tuple[Optional[str], Optional[str]]:
+    """Return (winning_token, enrollment_id) or (None, None) if missing/expired."""
+    entry = _EMAIL_OTP_STORE.pop(tx_id, None)
+    if entry is None:
+        return None, None
+    token, eid, expires_at = entry
+    if _time.monotonic() > expires_at:
+        return None, None
+    return token, eid
+
+# Push: tx_id → (authenticator_id, expires_at)
+# The v1.0 poll URL requires the authenticator_id — stored here at begin time.
+_PUSH_STORE: dict[str, tuple[str, float]] = {}
+_PUSH_TTL = 180  # 3 minutes
+
+def _store_push_ctx(tx_id: str, authenticator_id: str) -> None:
+    _PUSH_STORE[tx_id] = (authenticator_id, _time.monotonic() + _PUSH_TTL)
+    expired = [k for k, (_, exp) in _PUSH_STORE.items() if _time.monotonic() > exp]
+    for k in expired:
+        _PUSH_STORE.pop(k, None)
+
+def _get_push_auth_id(tx_id: str) -> str:
+    """Return the authenticator_id for this transaction, or '' if expired/missing."""
+    entry = _PUSH_STORE.get(tx_id)
+    if entry is None:
+        return ""
+    auth_id, expires_at = entry
+    return auth_id if _time.monotonic() < expires_at else ""
 
 
 # ── Methods: list what the user has enrolled ──────────────────────────────────
@@ -122,6 +168,10 @@ async def stepup_begin(
             if method == "push":
                 result = await verify_client.push_initiate(current_user.verify_user_id)
                 transaction_id = result.get("id") or result.get("transactionId")
+                auth_id = result.get("_authenticator_id", result.get("authenticatorId", ""))
+                # Store authenticator_id so poll and complete can build the correct URL
+                if transaction_id and auth_id:
+                    _store_push_ctx(transaction_id, auth_id)
                 return {
                     "method": "push",
                     "transaction_id": transaction_id,
@@ -140,12 +190,29 @@ async def stepup_begin(
 
             if method == "email_otp":
                 result = await verify_client.email_otp_send(
-                    current_user.verify_user_id, current_user.email
+                    current_user.verify_user_id, current_user.email,
+                    user_access_token=current_user.ibm_access_token,
                 )
                 transaction_id = result.get("id") or result.get("transactionId")
+                # IBM Verify's send response includes a "correlation" field.
+                # This is the leading portion of the OTP shown in the email
+                # (e.g. email shows "abc12-yyyyy"; correlation = "abc12").
+                # We surface it as otp_hint so the frontend can display it as a
+                # visual confirmation that the email arrived — the user still
+                # types the FULL code from the email (including the prefix part).
+                otp_hint: str = result.get("correlation") or ""
+                logger.info(
+                    "email_otp begin: tx=%s hint=%r send_keys=%s",
+                    transaction_id, otp_hint, list(result.keys()),
+                )
+                # Store the winning token + enrollment_id so complete can use
+                # the exact same auth context and correct verify URL.
+                if transaction_id and result.get("_auth_token") and result.get("_enrollment_id"):
+                    _store_otp_ctx(transaction_id, result["_auth_token"], result["_enrollment_id"])
                 return {
                     "method": "email_otp",
                     "transaction_id": transaction_id,
+                    "otp_hint": otp_hint,
                     "message": f"A one-time code has been sent to {current_user.email}.",
                 }
 
@@ -183,12 +250,14 @@ async def stepup_poll(
 ):
     """Poll IBM Verify for push approval. Returns pending | approved | denied."""
     try:
-        result = await verify_client.push_poll(transaction_id)
+        auth_id = _get_push_auth_id(transaction_id)
+        result = await verify_client.push_poll(transaction_id, authenticator_id=auth_id)
         raw = result.get("state") or result.get("status") or "PENDING"
         normalized = raw.upper()
-        if normalized == "APPROVED":
+        # IBM Verify v1.0/authenticators returns VERIFY_SUCCESS on approval
+        if normalized in ("APPROVED", "VERIFY_SUCCESS", "SUCCESS"):
             status = "approved"
-        elif normalized in ("DENIED", "TIMEOUT", "FAILED", "EXPIRED"):
+        elif normalized in ("DENIED", "TIMEOUT", "FAILED", "EXPIRED", "VERIFY_FAILED"):
             status = "denied"
         else:
             status = "pending"
@@ -221,9 +290,11 @@ async def stepup_complete(
         if req.method == "push":
             if not req.transaction_id:
                 raise HTTPException(status_code=400, detail="transaction_id required for push")
-            result = await verify_client.push_poll(req.transaction_id)
+            auth_id = _get_push_auth_id(req.transaction_id)
+            result = await verify_client.push_poll(req.transaction_id, authenticator_id=auth_id)
             raw = (result.get("state") or result.get("status") or "PENDING").upper()
-            if raw != "APPROVED":
+            # IBM Verify v1.0/authenticators returns VERIFY_SUCCESS on approval
+            if raw not in ("APPROVED", "VERIFY_SUCCESS", "SUCCESS"):
                 raise HTTPException(status_code=401, detail="Push not approved")
             verified = True
 
@@ -236,7 +307,26 @@ async def stepup_complete(
         elif req.method == "email_otp":
             if not req.transaction_id or not req.otp_code:
                 raise HTTPException(status_code=400, detail="transaction_id and otp_code required for email OTP")
-            await verify_client.email_otp_verify(req.transaction_id, req.otp_code)
+            # Strip all whitespace and hyphens from whatever the user typed.
+            # IBM Verify emails the code as a plain digit string; the user may
+            # copy-paste it with a space or hyphen that we must remove.
+            clean_otp = req.otp_code.replace("-", "").replace(" ", "").strip()
+            logger.info(
+                "email_otp complete: tx=%s raw_otp=%r clean_otp=%r",
+                req.transaction_id, req.otp_code, clean_otp,
+            )
+            # Pop the stored context — winning token + enrollment_id — both required.
+            winning_token, enrollment_id = _pop_otp_ctx(req.transaction_id)
+            logger.info(
+                "email_otp complete: enrollment_id=%s winning_token_present=%s",
+                enrollment_id, bool(winning_token),
+            )
+            await verify_client.email_otp_verify(
+                req.transaction_id, clean_otp,
+                user_access_token=current_user.ibm_access_token,
+                winning_token=winning_token,
+                enrollment_id=enrollment_id,
+            )
             verified = True
 
         elif req.method == "fido2":

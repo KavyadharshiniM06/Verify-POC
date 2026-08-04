@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -107,3 +107,36 @@ class UserConsent(Base):
     is_required: Mapped[bool] = mapped_column(Boolean, default=False)
     granted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
+
+
+class LoanStatus(str, enum.Enum):
+    pending  = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class LoanApplication(Base):
+    """Loan applications submitted by customers, reviewed and approved/rejected by Managers.
+
+    Loan approval above 5 Lakhs (5,00,000) requires a fresh IBM Verify 2FA step-up
+    from the approving Manager before the decision is persisted.
+    """
+    __tablename__ = "loan_applications"
+
+    id:              Mapped[int]             = mapped_column(primary_key=True)
+    # applicant details (stored as plain text — no FK so demo works without Customer users)
+    applicant_name:  Mapped[str]             = mapped_column(String(255))
+    applicant_email: Mapped[str]             = mapped_column(String(255), index=True)
+    purpose:         Mapped[str]             = mapped_column(String(500))
+    amount:          Mapped[float]           = mapped_column(Float)
+    term_months:     Mapped[int]             = mapped_column(Integer)
+    status:          Mapped[LoanStatus]      = mapped_column(SAEnum(LoanStatus), default=LoanStatus.pending)
+    # who acted on it
+    reviewer_verify_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default=None)
+    reviewer_name:      Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default=None)
+    reviewer_note:      Mapped[Optional[str]] = mapped_column(String(500), nullable=True, default=None)
+    # timestamps
+    created_at:  Mapped[datetime]           = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
+    # 2FA gate flag — True when loan was approved with a valid step-up
+    stepup_verified: Mapped[bool]           = mapped_column(Boolean, default=False)

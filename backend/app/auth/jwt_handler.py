@@ -10,7 +10,6 @@ from app.config import settings
 from app.database import get_db
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 bearer_scheme = HTTPBearer()
 
@@ -35,7 +34,7 @@ def create_session_token(
                      or None if no step-up has occurred.
     """
     now = datetime.now(timezone.utc)
-    expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = now + timedelta(minutes=settings.session_expire_minutes)
 
     stepup_time: str | None = None
     if stepup_verified:

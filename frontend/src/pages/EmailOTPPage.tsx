@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
@@ -98,7 +98,12 @@ export default function EmailOTPPage() {
           </>
         )}
 
-        <button style={s.back} onClick={() => navigate('/')}>← Back to Login</button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
+          <Link to="/mfa" style={{ fontSize: '0.82rem', color: '#3b82d4', textDecoration: 'none' }}>
+            Use a different method
+          </Link>
+          <button style={s.back} onClick={() => navigate('/')}>← Back to Login</button>
+        </div>
       </div>
     </div>
   )

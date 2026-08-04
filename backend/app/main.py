@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import banking, consents, debug, email_otp, fido2, push, sso, stepup, totp, users
+from app.routers import banking, consents, debug, email_otp, fido2, groups, loans, push, registration, sso, stepup, totp, users
 
 
 @asynccontextmanager
@@ -35,10 +35,13 @@ app.include_router(fido2.router)
 app.include_router(totp.router)
 app.include_router(push.router)
 app.include_router(email_otp.router)
+app.include_router(registration.router)
 app.include_router(sso.router)
 app.include_router(stepup.router)
 app.include_router(users.router)
 app.include_router(consents.router)
+app.include_router(groups.router)
+app.include_router(loans.router)
 app.include_router(debug.router)
 
 

@@ -2,17 +2,12 @@
 Debug / diagnostics endpoints — admin-only, read-only.
 
 GET /debug/verify-activity
-    Probes the IBM Verify audit events API (/v1.0/events/auditevents) with the
-    current client_credentials token and returns the raw HTTP status + first 500
-    bytes of the response body.  Use this to confirm whether the readActivity
-    scope is granted on your API client before wiring real data into the UI.
+    Probes the IBM Verify audit events API.
 
-    Possible outcomes:
-      200  — scope is active; body shows the event envelope (look for "events" key)
-      403  — readActivity scope not granted; add it in IBM Verify Admin →
-             Applications → API Access → your API client → Permissions tab
-      401  — token issue (wrong client_id / secret)
-      404  — tenant URL mismatch or v1.0 not supported on your plan
+GET /debug/enrolled-factors?user_id=<verify_user_id>
+    Calls each IBM Verify factor API for the given user and returns the raw
+    HTTP status + full response body for every endpoint.  Use this to
+    diagnose why enrolled_factors shows False for a user.
 """
 import logging
 
@@ -32,6 +27,96 @@ router = APIRouter(prefix="/debug", tags=["debug"])
 def _require_admin(current_user: User) -> None:
     if current_user.role != "Admin":
         raise HTTPException(status_code=403, detail="Admin role required")
+
+
+async def _probe_factors(target_id: str) -> dict:
+    """Shared implementation — call every IBM Verify factor API and return raw results."""
+
+    # Use admin token (same as get_enrolled_factors)
+    try:
+        token = await verify_client._get_admin_token()
+        token_type = "admin_ropc"
+    except Exception:
+        token = await verify_client._get_access_token()
+        token_type = "client_credentials"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+
+    results: dict = {"user_id": target_id, "token_type": token_type}
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        # ── FIDO2 ──
+        try:
+            r = await client.get(
+                f"{settings.verify_tenant_url}/v2.0/factors/fido2/registrations",
+                params={"search": f'userId = "{target_id}"'},
+                headers=headers,
+            )
+            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
+            results["fido2"] = {"status": r.status_code, "body": body}
+        except Exception as exc:
+            results["fido2"] = {"status": "error", "body": str(exc)}
+
+        # ── TOTP ──
+        try:
+            r = await client.get(
+                f"{settings.verify_tenant_url}/v2.0/factors/totp/registrations",
+                params={"userId": target_id},
+                headers=headers,
+            )
+            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
+            results["totp"] = {"status": r.status_code, "body": body}
+        except Exception as exc:
+            results["totp"] = {"status": "error", "body": str(exc)}
+
+        # ── Push ──
+        try:
+            r = await client.get(
+                f"{settings.verify_tenant_url}/v1.0/authenticators",
+                params={"userId": target_id},
+                headers=headers,
+            )
+            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
+            results["push"] = {"status": r.status_code, "body": body}
+        except Exception as exc:
+            results["push"] = {"status": "error", "body": str(exc)}
+
+        # ── Email OTP ──
+        try:
+            r = await client.get(
+                f"{settings.verify_tenant_url}/v2.0/factors/emailotp",
+                params={"search": f'userId = "{target_id}"'},
+                headers=headers,
+            )
+            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
+            results["email_otp"] = {"status": r.status_code, "body": body}
+        except Exception as exc:
+            results["email_otp"] = {"status": "error", "body": str(exc)}
+
+    return results
+
+
+@router.get("/enrolled-factors")
+async def debug_enrolled_factors(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Auth-required version — pass ?user_id=<verify_user_id>."""
+    return await _probe_factors(user_id.strip() or current_user.verify_user_id)
+
+
+@router.get("/factors-raw")
+async def debug_factors_raw(user_id: str):
+    """
+    No-auth version for quick browser testing.
+    GET /debug/factors-raw?user_id=<verify_user_id>
+    """
+    if not user_id.strip():
+        raise HTTPException(status_code=400, detail="user_id query param is required")
+    return await _probe_factors(user_id.strip())
 
 
 @router.get("/verify-activity")

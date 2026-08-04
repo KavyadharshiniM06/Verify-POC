@@ -1,5 +1,5 @@
 /**
- * MockBank Design Tokens — dark premium banking theme
+ * MockBank Design Tokens — dark premium banking theme (Admin / HR Portal)
  */
 export const T = {
   // ── Core palette ──────────────────────────────────────────────────────────
@@ -50,4 +50,57 @@ export const T = {
   // ── Shadows ────────────────────────────────────────────────────────────────
   shadowCard: '0 1px 3px rgba(0,0,0,0.4)',
   shadowPop:  '0 8px 32px rgba(0,0,0,0.6)',
+} as const
+
+/**
+ * Light theme tokens — Credit Analyst / Manager Portal
+ * Used for non-Admin roles (Loan Approvals workspace).
+ */
+export const LT = {
+  // ── Core palette ──────────────────────────────────────────────────────────
+  bg:          '#f0f2f5',   // page background — soft off-white
+  bgSidebar:   '#ffffff',   // sidebar — pure white
+  bgCard:      '#ffffff',   // card / panel surface
+  bgCardHover: '#f7f8fa',   // card hover
+  bgInput:     '#f7f8fa',   // input/select background
+  bgMuted:     '#f0f2f5',   // muted surface (row stripes, tags)
+  bgHighlight: '#eef2ff',   // subtle highlight
+
+  border:      '#d1d5db',   // standard border
+  borderLight: '#e5e7eb',   // very subtle row separator
+
+  ink:         '#111827',   // primary text — near-black
+  inkSub:      '#4b5563',   // secondary / muted text
+  inkLight:    '#9ca3af',   // very muted / disabled
+
+  amber:       '#d97706',   // primary CTA — slightly darker amber for legibility on white
+  amberDim:    '#b45309',
+  amberLight:  'rgba(217,119,6,0.10)',
+  amberBorder: 'rgba(217,119,6,0.30)',
+
+  green:       '#059669',
+  greenLight:  'rgba(5,150,105,0.10)',
+  greenBorder: 'rgba(5,150,105,0.30)',
+
+  red:         '#dc2626',
+  redLight:    'rgba(220,38,38,0.10)',
+  redBorder:   'rgba(220,38,38,0.30)',
+
+  blue:        '#2563eb',
+  blueLight:   'rgba(37,99,235,0.10)',
+
+  orange:      '#d97706',
+  orangeLight: 'rgba(217,119,6,0.10)',
+
+  // ── Shared tokens ──────────────────────────────────────────────────────────
+  fontFamily: '-apple-system, "Segoe UI", system-ui, sans-serif',
+
+  radiusCard:  '12px',
+  radiusInner: '8px',
+  radiusPill:  '999px',
+  radiusBtn:   '8px',
+  radiusInput: '8px',
+
+  shadowCard: '0 1px 3px rgba(0,0,0,0.08)',
+  shadowPop:  '0 8px 32px rgba(0,0,0,0.15)',
 } as const

@@ -305,6 +305,7 @@ before populating your `.env` file.
 | `FIDO2_RP_ORIGIN` | Your ngrok public hostname with `https://` prefix | `https://abcd1234.ngrok-free.app` |
 | `JWT_SECRET` | Generate locally — never from IBM Verify | `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `NGROK_AUTHTOKEN` | <https://dashboard.ngrok.com/get-started/your-authtoken> | `2abc...xyz_...` |
+| `SALESFORCE_APP_ID` | IBM Verify → Applications → Salesforce app → Application ID | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
 
 ### Generating `JWT_SECRET`
 
